@@ -52,6 +52,41 @@ import {
   Zap,
 } from 'lucide-react';
 
+/**
+ * Acceso seguro a `localStorage`.
+ *
+ * Leer `window.localStorage` lanza una excepción (SecurityError / DOMException)
+ * cuando el documento tiene el almacenamiento bloqueado: iframes con `sandbox`
+ * sin `allow-same-origin`, cookies de terceros bloqueadas, modo privado antiguo
+ * de Safari o políticas corporativas. Si esa excepción ocurre durante el render
+ * inicial, React aborta el montaje y la página se queda completamente en blanco.
+ */
+const safeStorage = {
+  get(key) {
+    try {
+      return window.localStorage.getItem(key);
+    } catch {
+      return null;
+    }
+  },
+  set(key, value) {
+    try {
+      window.localStorage.setItem(key, value);
+    } catch {
+      /* almacenamiento no disponible: la preferencia solo dura esta sesión */
+    }
+  },
+};
+
+/** `matchMedia` no existe en navegadores muy antiguos ni en entornos sin DOM. */
+function safeMatchMedia(query) {
+  try {
+    return window.matchMedia?.(query) ?? null;
+  } catch {
+    return null;
+  }
+}
+
 const copy = {
   es: {
     rescue: 'Modo rescate', explore: 'Modo exploración', settings: 'Ajustes', profile: 'Mi perfil', species: 'Especies', credits: 'Información',
@@ -120,6 +155,8 @@ const copy = {
 };
 
 const languageNames = { es: 'Español', va: 'Valencià', en: 'English' };
+
+const MOBILE_QUERY = '(max-width: 760px), (pointer: coarse)';
 
 function Brand({ compact = false }) {
   return (
@@ -431,7 +468,10 @@ function ModalShell({ close, title, icon: Icon, children, wide = false }) {
 }
 
 function App() {
-  const [language, setLanguageState] = useState(() => localStorage.getItem('gandia-language') || 'es');
+  const [language, setLanguageState] = useState(() => {
+    const stored = safeStorage.get('gandia-language');
+    return stored && stored in copy ? stored : 'es';
+  });
   const [screen, setScreen] = useState('menu');
   const [loadingMode, setLoadingMode] = useState('rescue');
   const [progress, setProgress] = useState(0);
@@ -440,15 +480,30 @@ function App() {
   const [cameraStream, setCameraStream] = useState(null);
   const [gpsPosition, setGpsPosition] = useState(null);
   const geoWatch = useRef(null);
-  const [isMobile, setIsMobile] = useState(() => window.matchMedia('(max-width: 760px), (pointer: coarse)').matches);
+  const [isMobile, setIsMobile] = useState(() => safeMatchMedia(MOBILE_QUERY)?.matches ?? false);
   const t = useMemo(() => (key) => copy[language]?.[key] ?? copy.es[key] ?? key, [language]);
-  const setLanguage = (lang) => { setLanguageState(lang); localStorage.setItem('gandia-language', lang); document.documentElement.lang = lang === 'va' ? 'ca' : lang; };
+  const setLanguage = (lang) => {
+    setLanguageState(lang);
+    safeStorage.set('gandia-language', lang);
+    document.documentElement.lang = lang === 'va' ? 'ca' : lang;
+  };
 
   useEffect(() => {
-    const media = window.matchMedia('(max-width: 760px), (pointer: coarse)');
+    document.documentElement.lang = language === 'va' ? 'ca' : language;
+  }, [language]);
+
+  useEffect(() => {
+    const media = safeMatchMedia(MOBILE_QUERY);
+    if (!media) return undefined;
     const update = () => setIsMobile(media.matches);
-    media.addEventListener?.('change', update);
-    return () => media.removeEventListener?.('change', update);
+    update();
+    // Safari < 14 solo implementa la API obsoleta addListener/removeListener.
+    if (media.addEventListener) {
+      media.addEventListener('change', update);
+      return () => media.removeEventListener('change', update);
+    }
+    media.addListener?.(update);
+    return () => media.removeListener?.(update);
   }, []);
 
   useEffect(() => {
