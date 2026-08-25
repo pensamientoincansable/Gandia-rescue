@@ -6,9 +6,61 @@
     <meta name="theme-color" content="#0b1110" />
     <meta name="description" content="Gandía Rescate y Exploración — protege la fauna y descubre Gandía." />
     <title>Gandía — Rescate y Exploración</title>
+    <!-- Respaldo visible incluso si el bundle no llega a descargarse. React lo
+         sustituye al montar la aplicación. -->
+    <style>
+      html, body { min-height: 100%; margin: 0; background: #09100e; }
+      .boot-screen { min-height: 100vh; display: grid; place-items: center; padding: 24px; box-sizing: border-box; color: #f6f7f2; font: 600 14px/1.5 system-ui, sans-serif; text-align: center; }
+      .boot-screen__mark { width: 42px; height: 42px; margin: 0 auto 16px; border: 3px solid rgba(255,255,255,.16); border-top-color: #f06f3c; border-radius: 50%; animation: boot-spin .8s linear infinite; }
+      .boot-screen p { margin: 0; color: rgba(246,247,242,.72); }
+      .boot-screen button { margin-top: 18px; padding: 10px 18px; border: 0; border-radius: 10px; background: #f06f3c; color: #fff; font: inherit; cursor: pointer; }
+      @keyframes boot-spin { to { transform: rotate(360deg); } }
+    </style>
   </head>
   <body>
-    <div id="root"></div>
-    <script type="module" src="/src/main.jsx"></script>
+    <div id="root">
+      <div class="boot-screen" role="status" aria-live="polite">
+        <div>
+          <div class="boot-screen__mark" aria-hidden="true"></div>
+          <p id="boot-message">Cargando Gandía Rescate…</p>
+          <button id="boot-reload" type="button" hidden>Reintentar</button>
+        </div>
+      </div>
+    </div>
+    <script>
+      window.showBootError = function () {
+        var message = document.getElementById('boot-message');
+        var reload = document.getElementById('boot-reload');
+        if (!message || !reload) return;
+        message.textContent = 'No se ha podido iniciar la experiencia.';
+        reload.hidden = false;
+        if (reload.dataset.ready) return;
+        reload.dataset.ready = 'true';
+        reload.addEventListener('click', function () { window.location.reload(); });
+      };
+      window.setTimeout(window.showBootError, 8000);
+    </script>
+    <script type="module">
+      try {
+        const useSource = import.meta.env?.DEV === true
+          || import.meta.env?.GANDIA_BUILD_SOURCE === true;
+
+        if (useSource) {
+          await import('/src/main.jsx');
+        } else {
+          // GitHub Pages sirve el repositorio sin transformar JSX ni resolver
+          // paquetes npm. En ese caso arrancamos el bundle compilado incluido.
+          const staticBase = new URL('./static/', document.baseURI);
+          const stylesheet = document.createElement('link');
+          stylesheet.rel = 'stylesheet';
+          stylesheet.href = new URL('app.css', staticBase).href;
+          document.head.append(stylesheet);
+          await import(/* @vite-ignore */ new URL('app.js', staticBase).href);
+        }
+      } catch (error) {
+        console.error('[Gandía] No se ha podido cargar el bundle:', error);
+        window.showBootError();
+      }
+    </script>
   </body>
 </html>
