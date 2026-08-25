@@ -27,4 +27,16 @@ npm run build
 npm run preview -- --host 0.0.0.0
 ```
 
+## Despliegue en GitHub Pages
+
+GitHub Pages está configurado para servir directamente la raíz de `main`. Como ese
+servidor no transforma JSX ni resuelve dependencias npm, `npm run build` genera
+también un bundle autocontenido en `static/`. El `index.html` usa el código fuente
+cuando se ejecuta mediante Vite y carga ese bundle cuando se sirve como página
+estática. Así, la URL `/Gandia-rescue/` funciona sin cambiar la configuración del
+repositorio ni depender de rutas absolutas.
+
+Después de modificar `src`, ejecuta `npm run build` y versiona los cambios generados
+en `static/` junto con el código fuente.
+
 El prototipo está preparado como una capa de experiencia web para conectar posteriormente proveedores reales de GPS/WebXR, servicios de mapas 3D y guardado en la nube.
