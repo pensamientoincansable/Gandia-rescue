@@ -66,6 +66,10 @@ export const copy = {
     audio: 'Sonido', audioDesc: 'Música y efectos ambientales', language: 'Idioma', langDesc: 'Interfaz y diálogos',
     lookSpeed: 'Velocidad de giro', lookSpeedDesc: 'Vista 360°', graphics: 'Calidad gráfica', automatic: 'Automática', high: 'Alta', medium: 'Media', low: 'Baja', save: 'Guardar cambios',
     platformMobile: 'Controles táctiles activos', platformDesktop: 'Arrastra con el ratón para mirar',
+    streetView: 'Street View 360°', resetNorth: 'Orientar al Norte', zoomIn: 'Acercar', zoomOut: 'Alejar',
+    fullscreen: 'Pantalla completa', exitFullscreen: 'Salir de pantalla completa',
+    gyroscope: 'Giroscopio', gyroActive: 'Giroscopio activo: mueve tu dispositivo',
+    qualityUltra: 'Ultra HD 360°',
     info: 'Gandía Natura',
   },
   va: {
@@ -131,6 +135,10 @@ export const copy = {
     audio: 'So', audioDesc: 'Música i efectes ambientals', language: 'Idioma', langDesc: 'Interfície i diàlegs',
     lookSpeed: 'Velocitat de gir', lookSpeedDesc: 'Vista 360°', graphics: 'Qualitat gràfica', automatic: 'Automàtica', high: 'Alta', medium: 'Mitjana', low: 'Baixa', save: 'Guardar canvis',
     platformMobile: 'Controls tàctils actius', platformDesktop: 'Arrossega amb el ratolí per a mirar',
+    streetView: 'Street View 360°', resetNorth: 'Orientar al Nord', zoomIn: 'Apropar', zoomOut: 'Allunyar',
+    fullscreen: 'Pantalla completa', exitFullscreen: 'Eixir de pantalla completa',
+    gyroscope: 'Giroscopi', gyroActive: 'Giroscopi actiu: mou el teu dispositiu',
+    qualityUltra: 'Ultra HD 360°',
     info: 'Gandia Natura',
   },
   en: {
@@ -196,6 +204,10 @@ export const copy = {
     audio: 'Sound', audioDesc: 'Music and ambient effects', language: 'Language', langDesc: 'Interface and dialogues',
     lookSpeed: 'Look speed', lookSpeedDesc: '360° view', graphics: 'Graphics quality', automatic: 'Automatic', high: 'High', medium: 'Medium', low: 'Low', save: 'Save changes',
     platformMobile: 'Touch controls active', platformDesktop: 'Drag with the mouse to look around',
+    streetView: '360° Street View', resetNorth: 'Face North', zoomIn: 'Zoom in', zoomOut: 'Zoom out',
+    fullscreen: 'Fullscreen', exitFullscreen: 'Exit fullscreen',
+    gyroscope: 'Motion control', gyroActive: 'Motion active: move your device',
+    qualityUltra: 'Ultra HD 360°',
     info: 'Gandía Natura',
   },
 };

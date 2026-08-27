@@ -163,6 +163,9 @@ export default function RescueMode({
         onLook={({ headingDeg }) => setRawYaw(headingDeg - zone.north)}
         loadingLabel={t('panoLoading')}
         errorLabel={t('panoError')}
+        zoneName={zoneName}
+        zoneCoord={`${zone.lat.toFixed(4)}° N, ${Math.abs(zone.lng).toFixed(4)}° ${zone.lng >= 0 ? 'E' : 'W'}`}
+        t={t}
       />
       <div className="game-vignette" />
 
