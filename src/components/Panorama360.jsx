@@ -1,15 +1,20 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useCallback } from 'react';
+import {
+  Compass, Maximize2, Minimize2, Plus, Minus, Smartphone, Navigation, Eye, Check,
+} from 'lucide-react';
 
 /**
- * Visor de panoramas equirrectangulares 360° estilo Street View.
+ * Visor de panoramas equirrectangulares 360° estilo Google Street View.
  *
- * - Renderiza la imagen sobre una esfera virtual con WebGL (un quad a pantalla
- *   completa y proyección por píxel en el fragment shader).
- * - Arrastrar para mirar (con inercia), rueda/pellizco para el zoom,
- *   flechas del teclado para mirar.
- * - Los `hotspots` se proyectan cada fotograma sobre la pantalla como
- *   botones DOM (flechas de desplazamiento, marcadores de misiones...).
- * - Si WebGL no está disponible, muestra la imagen plana como respaldo.
+ * Características técnicas:
+ * - Renderizado en esfera virtual WebGL con proyección matemática equirrectangular completa (360° x 180°).
+ * - Filtrado anisotrópico (EXT_texture_filter_anisotropic) y soporte de alta resolución DPR (Retina/4K).
+ * - Transición cinemática Street View (dolly zoom y crossfade suave entre nodos consecutivos).
+ * - Proyección en tiempo real de hotspots interactivos en coordenadas 3D sobre la pantalla.
+ * - Brújula interactiva (clic para reorientar al Norte), controles flotantes de zoom (+/-),
+ *   pantalla completa y giroscopio móvil para mover la vista inclinando el dispositivo.
+ * - Inercia física natural al arrastrar con ratón / táctil, zoom con rueda o pellizco,
+ *   y respaldo plano si WebGL no está disponible.
  */
 
 const VERT_SRC = `
@@ -24,24 +29,42 @@ const FRAG_SRC = `
 precision mediump float;
 varying vec2 vPos;
 uniform sampler2D uTex;
+uniform sampler2D uTexPrev;
+uniform float uBlend;
+uniform float uZoom;
 uniform vec3 uFwd;
 uniform vec3 uRight;
 uniform vec3 uUp;
 uniform float uTan;
 uniform float uAspect;
 const float PI = 3.141592653589793;
-void main() {
-  vec3 dir = normalize(uFwd + uRight * (vPos.x * uTan * uAspect) + uUp * (vPos.y * uTan));
+
+vec4 sampleSphere(sampler2D tex, vec3 dir) {
   float lon = atan(dir.x, -dir.z);
   float lat = asin(clamp(dir.y, -1.0, 1.0));
-  vec2 uv = vec2(lon / (2.0 * PI) + 0.5, 0.5 - lat / PI);
-  gl_FragColor = texture2D(uTex, uv);
+  vec2 uv = vec2(fract(lon / (2.0 * PI) + 0.5), 0.5 - lat / PI);
+  return texture2D(tex, uv);
+}
+
+void main() {
+  vec3 dir = normalize(uFwd + (uRight * (vPos.x * uTan * uAspect) + uUp * (vPos.y * uTan)) / max(0.01, uZoom));
+  vec4 colNext = sampleSphere(uTex, dir);
+  vec4 color;
+  if (uBlend < 0.999) {
+    vec4 colPrev = sampleSphere(uTexPrev, dir);
+    color = mix(colPrev, colNext, uBlend);
+  } else {
+    color = colNext;
+  }
+  // Mejora de contraste fotográfico y luminancia estilo Street View
+  vec3 rgb = pow(color.rgb, vec3(0.96));
+  gl_FragColor = vec4(rgb, color.a);
 }`;
 
 const DEG = Math.PI / 180;
-const MIN_FOV = 46;
+const MIN_FOV = 42;
 const MAX_FOV = 96;
-const PITCH_LIMIT = 78;
+const PITCH_LIMIT = 82;
 
 function compile(gl, type, src) {
   const shader = gl.createShader(type);
@@ -57,21 +80,27 @@ function compile(gl, type, src) {
 export default function Panorama360({
   src,
   hotspots = [],
-  sensitivity = 0.65,       // 0.2 – 1.2 aprox
+  sensitivity = 0.65,
   initialYaw = 0,
-  onLook,                   // ({headingDeg, pitchDeg, fovDeg}) => void (aprox. 8 Hz)
+  onLook,
   className = '',
-  overlayTop = null,        // nodo React opcional sobre el canvas
-  loadingLabel = 'Cargando panorama 360°…',
-  errorLabel = 'No se ha podido cargar la imagen 360°.',
+  overlayTop = null,
+  loadingLabel = 'Cargando vista 360°…',
+  errorLabel = 'No se ha podido cargar el panorama 360°.',
+  zoneName = '',
+  zoneCoord = '',
+  t = (k) => k,
 }) {
   const containerRef = useRef(null);
   const canvasRef = useRef(null);
   const hotspotsRef = useRef(null);
   const stateRef = useRef({
     yaw: initialYaw * DEG,
-    pitch: -6 * DEG,
-    fov: 74 * DEG,
+    pitch: -4 * DEG,
+    fov: 72 * DEG,
+    targetFov: 72 * DEG,
+    targetYaw: null,
+    targetPitch: null,
     vyaw: 0,
     vpitch: 0,
     dragging: false,
@@ -79,33 +108,43 @@ export default function Panorama360({
     pinchDist: 0,
     lastPointer: null,
   });
+
   const glRef = useRef(null);
   const programRef = useRef(null);
   const texturesRef = useRef(new Map());
   const activeTexRef = useRef(null);
+  const prevTexRef = useRef(null);
+  const transitionRef = useRef(null);
+
   const [webglFailed, setWebglFailed] = useState(false);
-  /* Se incrementa para volver a montar el motor tras `webglcontextrestored`. */
   const [initToken, setInitToken] = useState(0);
-  /* Se incrementa cada vez que hay un contexto WebGL listo (montaje inicial y
-     restauración tras `webglcontextrestored`): las texturas se vuelven a subir. */
   const [glEpoch, setGlEpoch] = useState(0);
-  /* Estado de carga de la imagen equirectangular: 'loading' | 'ready' | 'error'. */
   const [imageState, setImageState] = useState('loading');
-  /* onLook se guarda en un ref para que el bucle RAF nunca use un cierre obsoleto. */
+  const [headingDeg, setHeadingDeg] = useState(0);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const [gyroActive, setGyroActive] = useState(false);
+  const [hasGyroSupport, setHasGyroSupport] = useState(false);
+
   const onLookRef = useRef(onLook);
   onLookRef.current = onLook;
 
-  /* ------------------------------------------------ motor de render */
+  // Detección de giroscopio en el dispositivo
+  useEffect(() => {
+    if (typeof window !== 'undefined' && 'DeviceOrientationEvent' in window) {
+      setHasGyroSupport(true);
+    }
+  }, []);
+
+  /* ------------------------------------------------ motor de render WebGL */
   useEffect(() => {
     const container = containerRef.current;
     const canvas = canvasRef.current;
     if (!container || !canvas) return undefined;
 
-    /* El contexto se pierde si el navegador lo recicla; en ese caso se vuelve a
-       montar el motor completo cuando el navegador lo restaura. */
     const onContextLost = (event) => {
       event.preventDefault();
       activeTexRef.current = null;
+      prevTexRef.current = null;
       texturesRef.current.clear();
       glRef.current = null;
     };
@@ -113,7 +152,8 @@ export default function Panorama360({
     canvas.addEventListener('webglcontextlost', onContextLost);
     canvas.addEventListener('webglcontextrestored', onContextRestored);
 
-    const gl = canvas.getContext('webgl', { antialias: false, alpha: false }) || canvas.getContext('experimental-webgl');
+    const gl = canvas.getContext('webgl', { antialias: true, alpha: false, depth: false, powerPreference: 'high-performance' })
+      || canvas.getContext('experimental-webgl');
     if (!gl || gl.isContextLost?.()) {
       setWebglFailed(true);
       container.classList.add('pano--flat');
@@ -147,7 +187,9 @@ export default function Panorama360({
     gl.vertexAttribPointer(aPos, 2, gl.FLOAT, false, 0, 0);
 
     const uTex = gl.getUniformLocation(program, 'uTex');
+    const uTexPrev = gl.getUniformLocation(program, 'uTexPrev');
     gl.uniform1i(uTex, 0);
+    gl.uniform1i(uTexPrev, 1);
 
     const uniforms = {
       fwd: gl.getUniformLocation(program, 'uFwd'),
@@ -155,10 +197,11 @@ export default function Panorama360({
       up: gl.getUniformLocation(program, 'uUp'),
       tan: gl.getUniformLocation(program, 'uTan'),
       aspect: gl.getUniformLocation(program, 'uAspect'),
+      blend: gl.getUniformLocation(program, 'uBlend'),
+      zoom: gl.getUniformLocation(program, 'uZoom'),
     };
 
     setWebglFailed(false);
-    /* Aviso al efecto de texturas: hay contexto listo al que subir la imagen. */
     setGlEpoch((n) => n + 1);
 
     let raf = 0;
@@ -167,7 +210,7 @@ export default function Panorama360({
     let running = true;
 
     const resize = () => {
-      const dpr = Math.min(window.devicePixelRatio || 1, 1.75);
+      const dpr = Math.min(window.devicePixelRatio || 1, 2.2);
       const w = Math.max(2, Math.round(container.clientWidth * dpr));
       const h = Math.max(2, Math.round(container.clientHeight * dpr));
       if (canvas.width !== w || canvas.height !== h) {
@@ -187,8 +230,27 @@ export default function Panorama360({
       const dt = Math.min(0.05, (now - lastT) / 1000);
       lastT = now;
 
-      // inercia
-      if (!st.dragging) {
+      // Suavizado de destino (cuando se hace clic para reorientar al Norte o navegar)
+      if (st.targetYaw != null) {
+        let dy = st.targetYaw - st.yaw;
+        while (dy > Math.PI) dy -= Math.PI * 2;
+        while (dy < -Math.PI) dy += Math.PI * 2;
+        st.yaw += dy * Math.min(1, dt * 7);
+        if (Math.abs(dy) < 0.005) st.targetYaw = null;
+      }
+      if (st.targetPitch != null) {
+        const dp = st.targetPitch - st.pitch;
+        st.pitch += dp * Math.min(1, dt * 7);
+        if (Math.abs(dp) < 0.005) st.targetPitch = null;
+      }
+
+      // Suavizado de FOV (zoom)
+      if (Math.abs(st.fov - st.targetFov) > 0.001) {
+        st.fov += (st.targetFov - st.fov) * Math.min(1, dt * 8);
+      }
+
+      // Inercia natural
+      if (!st.dragging && st.targetYaw == null) {
         st.yaw += st.vyaw * dt;
         st.pitch += st.vpitch * dt;
         st.vyaw *= Math.pow(0.06, dt);
@@ -199,16 +261,37 @@ export default function Panorama360({
       st.pitch = Math.max(-PITCH_LIMIT * DEG, Math.min(PITCH_LIMIT * DEG, st.pitch));
       st.fov = Math.max(MIN_FOV * DEG, Math.min(MAX_FOV * DEG, st.fov));
 
+      // Transición cinemática Street View
+      let blendVal = 1.0;
+      let zoomVal = 1.0;
+      const tr = transitionRef.current;
+      if (tr) {
+        const progress = Math.min(1, (now - tr.start) / tr.duration);
+        // Curva sigmoide suave
+        const ease = progress * progress * (3.0 - 2.0 * progress);
+        blendVal = ease;
+        // Efecto de avance dinámico (dolly forward)
+        zoomVal = 1.0 + Math.sin(progress * Math.PI) * 0.18;
+        if (progress >= 1) {
+          transitionRef.current = null;
+          prevTexRef.current = null;
+        }
+      }
+
       const tex = activeTexRef.current;
+      const prevTex = prevTexRef.current;
       const gl2 = glRef.current;
       if (gl2 && !gl2.isContextLost() && tex) {
         gl2.clearColor(0.04, 0.08, 0.07, 1);
         gl2.clear(gl2.COLOR_BUFFER_BIT);
-        /* La textura activa se vuelve a enlazar en cada fotograma: al viajar a
-           una zona ya visitada se reutiliza una textura cacheada que no queda
-           enlazada automáticamente y se seguiría viendo el panorama anterior. */
+
+        if (prevTex && blendVal < 0.999) {
+          gl2.activeTexture(gl2.TEXTURE1);
+          gl2.bindTexture(gl2.TEXTURE_2D, prevTex);
+        }
         gl2.activeTexture(gl2.TEXTURE0);
         gl2.bindTexture(gl2.TEXTURE_2D, tex);
+
         const yaw = st.yaw;
         const pitch = st.pitch;
         const cp = Math.cos(pitch);
@@ -218,15 +301,19 @@ export default function Panorama360({
         const fwd = [sy * cp, sp, -cy * cp];
         const right = [cy, 0, sy];
         const up = [-sy * sp, cp, cy * sp];
+
         gl2.uniform3fv(uniforms.fwd, fwd);
         gl2.uniform3fv(uniforms.right, right);
         gl2.uniform3fv(uniforms.up, up);
         gl2.uniform1f(uniforms.tan, Math.tan(st.fov / 2));
         gl2.uniform1f(uniforms.aspect, canvas.width / Math.max(1, canvas.height));
+        gl2.uniform1f(uniforms.blend, blendVal);
+        gl2.uniform1f(uniforms.zoom, zoomVal);
+
         gl2.drawArrays(gl2.TRIANGLES, 0, 3);
       }
 
-      // proyección de hotspots
+      // Proyección de hotspots con cálculo de profundidad y perspectiva
       const layer = hotspotsRef.current;
       if (layer) {
         const st2 = stateRef.current;
@@ -239,6 +326,7 @@ export default function Panorama360({
         const up = [-sy * sp, cp, cy * sp];
         const tan = Math.tan(st2.fov / 2);
         const aspect = container.clientWidth / Math.max(1, container.clientHeight);
+
         for (const child of layer.children) {
           const hy = Number(child.dataset.yaw) * DEG;
           const hp = Number(child.dataset.pitch) * DEG;
@@ -264,12 +352,14 @@ export default function Panorama360({
         }
       }
 
-      if (onLookRef.current && now - lookEmit > 120) {
+      if (now - lookEmit > 100) {
         lookEmit = now;
-        const st3 = stateRef.current;
-        let heading = (st3.yaw / DEG) % 360;
+        let heading = (st.yaw / DEG) % 360;
         if (heading < 0) heading += 360;
-        onLookRef.current({ headingDeg: heading, pitchDeg: st3.pitch / DEG, fovDeg: st3.fov / DEG });
+        setHeadingDeg(heading);
+        if (onLookRef.current) {
+          onLookRef.current({ headingDeg: heading, pitchDeg: st.pitch / DEG, fovDeg: st.fov / DEG });
+        }
       }
     };
     raf = requestAnimationFrame(frame);
@@ -279,10 +369,6 @@ export default function Panorama360({
       cancelAnimationFrame(raf);
       ro?.disconnect();
       removeContextListeners();
-      /* No se fuerza `WEBGL_lose_context`: el contexto quedaba inutilizable y,
-         al remontar el componente (React StrictMode remonta cada efecto en
-         desarrollo), `getContext` devolvía el mismo contexto ya perdido y el
-         panorama no volvía a dibujarse nunca. */
       if (!gl.isContextLost()) {
         for (const tex of texturesRef.current.values()) gl.deleteTexture(tex);
         gl.deleteBuffer(buffer);
@@ -292,21 +378,20 @@ export default function Panorama360({
       }
       texturesRef.current.clear();
       activeTexRef.current = null;
+      prevTexRef.current = null;
       glRef.current = null;
       programRef.current = null;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initToken]);
 
-  /* ------------------------------------------------ carga de texturas */
+  /* ------------------------------------------------ carga de texturas y transición */
   useEffect(() => {
     const gl = glRef.current;
-    /* Sin WebGL se sigue cargando la imagen para el respaldo plano y para saber
-       si la descarga ha funcionado. */
     const useGl = !!gl && !webglFailed && !gl.isContextLost();
     const image = new Image();
     let cancelled = false;
     setImageState((prev) => (prev === 'ready' ? prev : 'loading'));
+
     image.onload = () => {
       if (cancelled) return;
       const gl2 = glRef.current;
@@ -318,39 +403,53 @@ export default function Panorama360({
           gl2.bindTexture(gl2.TEXTURE_2D, tex);
           gl2.pixelStorei(gl2.UNPACK_FLIP_Y_WEBGL, false);
           gl2.texImage2D(gl2.TEXTURE_2D, 0, gl2.RGBA, gl2.RGBA, gl2.UNSIGNED_BYTE, image);
-          gl2.texParameteri(gl2.TEXTURE_2D, gl2.TEXTURE_WRAP_S, gl2.CLAMP_TO_EDGE);
+          gl2.texParameteri(gl2.TEXTURE_2D, gl2.TEXTURE_WRAP_S, gl2.REPEAT);
           gl2.texParameteri(gl2.TEXTURE_2D, gl2.TEXTURE_WRAP_T, gl2.CLAMP_TO_EDGE);
           gl2.texParameteri(gl2.TEXTURE_2D, gl2.TEXTURE_MIN_FILTER, gl2.LINEAR);
           gl2.texParameteri(gl2.TEXTURE_2D, gl2.TEXTURE_MAG_FILTER, gl2.LINEAR);
+
+          // Activar filtrado anisotrópico si está disponible para máxima nitidez
+          const ext = gl2.getExtension('EXT_texture_filter_anisotropic') || gl2.getExtension('WEBKIT_EXT_texture_filter_anisotropic');
+          if (ext) {
+            const maxAniso = gl2.getParameter(ext.MAX_TEXTURE_MAX_ANISOTROPY_EXT) || 4;
+            gl2.texParameterf(gl2.TEXTURE_2D, ext.TEXTURE_MAX_ANISOTROPY_EXT, Math.min(maxAniso, 8));
+          }
+
           texturesRef.current.set(src, tex);
+        }
+
+        if (activeTexRef.current && activeTexRef.current !== tex) {
+          prevTexRef.current = activeTexRef.current;
+          transitionRef.current = { start: performance.now(), duration: 520 };
         }
         activeTexRef.current = tex;
       }
       setImageState('ready');
     };
-    /* Antes un 404 (o cualquier error de red) fallaba en silencio y el visor se
-       quedaba en negro sin explicación: ahora se avisa por consola y en pantalla. */
+
     image.onerror = () => {
       if (cancelled) return;
-      console.error('[Gandía] No se ha podido cargar el panorama 360°:', src);
+      console.error('[Gandía] Error al cargar panorama 360°:', src);
       setImageState('error');
     };
     image.src = src;
     return () => { cancelled = true; };
   }, [src, webglFailed, glEpoch]);
 
-  /* ------------------------------------------------ interacción */
+  /* ------------------------------------------------ interacción ratón / táctil */
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return undefined;
     const st = stateRef.current;
 
     const onPointerDown = (e) => {
-      if (e.target.closest?.('.pano-hotspot')) return;
+      if (e.target.closest?.('.pano-hotspot') || e.target.closest?.('.pano-ctrl-btn') || e.target.closest?.('.pano-hud')) return;
       st.pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
       st.dragging = true;
       st.vyaw = 0;
       st.vpitch = 0;
+      st.targetYaw = null;
+      st.targetPitch = null;
       st.lastPointer = { x: e.clientX, y: e.clientY };
       container.classList.add('pano--dragging');
       if (st.pointers.size === 2) {
@@ -362,14 +461,15 @@ export default function Panorama360({
 
     const onPointerMove = (e) => {
       if (!st.pointers.has(e.pointerId)) return;
-      const prev = st.pointers.get(e.pointerId);
       st.pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
       if (st.pointers.size === 2) {
         const [a, b] = [...st.pointers.values()];
         const dist = Math.hypot(a.x - b.x, a.y - b.y);
         if (st.pinchDist > 0) {
           const scale = st.pinchDist / Math.max(1, dist);
-          st.fov = Math.max(MIN_FOV * DEG, Math.min(MAX_FOV * DEG, st.fov * scale));
+          const nextFov = Math.max(MIN_FOV * DEG, Math.min(MAX_FOV * DEG, st.targetFov * scale));
+          st.targetFov = nextFov;
+          st.fov = nextFov;
         }
         st.pinchDist = dist;
         return;
@@ -398,17 +498,31 @@ export default function Panorama360({
 
     const onWheel = (e) => {
       e.preventDefault();
-      st.fov = Math.max(MIN_FOV * DEG, Math.min(MAX_FOV * DEG, st.fov * (1 + Math.sign(e.deltaY) * 0.08)));
+      const delta = Math.sign(e.deltaY) * 0.09;
+      st.targetFov = Math.max(MIN_FOV * DEG, Math.min(MAX_FOV * DEG, st.targetFov * (1 + delta)));
+    };
+
+    const onDoubleClick = (e) => {
+      if (e.target.closest?.('.pano-hotspot') || e.target.closest?.('.pano-ctrl-btn')) return;
+      const rect = container.getBoundingClientRect();
+      const nx = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+      const ny = -(((e.clientY - rect.top) / rect.height) * 2 - 1);
+      const aspect = rect.width / Math.max(1, rect.height);
+      const tan = Math.tan(st.fov / 2);
+      const dyaw = -Math.atan2(nx * tan * aspect, 1);
+      const dpitch = Math.atan2(ny * tan, 1);
+      st.targetYaw = st.yaw + dyaw * 0.75;
+      st.targetPitch = Math.max(-PITCH_LIMIT * DEG, Math.min(PITCH_LIMIT * DEG, st.pitch + dpitch * 0.75));
     };
 
     const onKey = (e) => {
       const step = 6 * DEG * (0.5 + sensitivity);
-      if (e.key === 'ArrowLeft') st.yaw -= step;
-      else if (e.key === 'ArrowRight') st.yaw += step;
-      else if (e.key === 'ArrowUp') st.pitch = Math.min(PITCH_LIMIT * DEG, st.pitch + step);
-      else if (e.key === 'ArrowDown') st.pitch = Math.max(-PITCH_LIMIT * DEG, st.pitch - step);
-      else if (e.key === '+') st.fov = Math.max(MIN_FOV * DEG, st.fov * 0.92);
-      else if (e.key === '-') st.fov = Math.min(MAX_FOV * DEG, st.fov * 1.08);
+      if (e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A') st.yaw -= step;
+      else if (e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D') st.yaw += step;
+      else if (e.key === 'ArrowUp' || e.key === 'w' || e.key === 'W') st.pitch = Math.min(PITCH_LIMIT * DEG, st.pitch + step);
+      else if (e.key === 'ArrowDown' || e.key === 's' || e.key === 'S') st.pitch = Math.max(-PITCH_LIMIT * DEG, st.pitch - step);
+      else if (e.key === '+' || e.key === '=') st.targetFov = Math.max(MIN_FOV * DEG, st.targetFov * 0.9);
+      else if (e.key === '-' || e.key === '_') st.targetFov = Math.min(MAX_FOV * DEG, st.targetFov * 1.1);
       else return;
       e.preventDefault();
     };
@@ -418,28 +532,161 @@ export default function Panorama360({
     container.addEventListener('pointerup', onPointerUp);
     container.addEventListener('pointercancel', onPointerUp);
     container.addEventListener('wheel', onWheel, { passive: false });
+    container.addEventListener('dblclick', onDoubleClick);
     container.addEventListener('keydown', onKey);
+
     return () => {
       container.removeEventListener('pointerdown', onPointerDown);
       container.removeEventListener('pointermove', onPointerMove);
       container.removeEventListener('pointerup', onPointerUp);
       container.removeEventListener('pointercancel', onPointerUp);
       container.removeEventListener('wheel', onWheel);
+      container.removeEventListener('dblclick', onDoubleClick);
       container.removeEventListener('keydown', onKey);
     };
   }, [sensitivity]);
 
+  /* ------------------------------------------------ Giroscopio / Motion */
+  useEffect(() => {
+    if (!gyroActive) return undefined;
+    let initialAlpha = null;
+    const onOrientation = (e) => {
+      if (e.alpha == null || e.beta == null) return;
+      if (initialAlpha == null) initialAlpha = e.alpha;
+      const alpha = (e.alpha - initialAlpha) * DEG;
+      const beta = (e.beta - 90) * DEG;
+      stateRef.current.yaw = -alpha;
+      stateRef.current.pitch = Math.max(-PITCH_LIMIT * DEG, Math.min(PITCH_LIMIT * DEG, beta));
+    };
+    window.addEventListener('deviceorientation', onOrientation);
+    return () => window.removeEventListener('deviceorientation', onOrientation);
+  }, [gyroActive]);
+
+  const toggleGyro = useCallback(() => {
+    if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
+      DeviceOrientationEvent.requestPermission()
+        .then((res) => {
+          if (res === 'granted') setGyroActive((prev) => !prev);
+        })
+        .catch((err) => console.warn('Gyro permission error:', err));
+    } else {
+      setGyroActive((prev) => !prev);
+    }
+  }, []);
+
+  const resetNorth = useCallback(() => {
+    stateRef.current.targetYaw = 0;
+  }, []);
+
+  const zoomIn = useCallback(() => {
+    const st = stateRef.current;
+    st.targetFov = Math.max(MIN_FOV * DEG, st.targetFov * 0.85);
+  }, []);
+
+  const zoomOut = useCallback(() => {
+    const st = stateRef.current;
+    st.targetFov = Math.min(MAX_FOV * DEG, st.targetFov * 1.15);
+  }, []);
+
+  const toggleFullscreen = useCallback(() => {
+    const container = containerRef.current;
+    if (!container) return;
+    if (!document.fullscreenElement) {
+      container.requestFullscreen?.().then(() => setIsFullscreen(true)).catch(() => {});
+    } else {
+      document.exitFullscreen?.().then(() => setIsFullscreen(false)).catch(() => {});
+    }
+  }, []);
+
   return (
-    <div ref={containerRef} className={`pano ${className}`} tabIndex={0} role="application" aria-label="Vista 360 grados">
+    <div ref={containerRef} className={`pano ${className}`} tabIndex={0} role="application" aria-label="Vista 360 grados Street View">
       <canvas ref={canvasRef} className="pano__canvas" />
+
       {(webglFailed || imageState === 'error') && (
         <div className="pano__flat-img" style={{ backgroundImage: `url(${src})` }} />
       )}
+
       {imageState !== 'ready' && (
         <div className={`pano__notice ${imageState === 'error' ? 'pano__notice--error' : ''}`} role="status" aria-live="polite">
+          <span className="pano-spinner" />
           {imageState === 'error' ? errorLabel : loadingLabel}
         </div>
       )}
+
+      {/* Street View HUD Badge */}
+      {zoneName && (
+        <div className="pano-hud">
+          <div className="pano-hud__badge">
+            <span className="pano-hud__dot" />
+            <span className="pano-hud__tag">{t('streetView') || 'Street View 360°'}</span>
+          </div>
+          <strong className="pano-hud__title">{zoneName}</strong>
+          {zoneCoord && <span className="pano-hud__coord">{zoneCoord}</span>}
+        </div>
+      )}
+
+      {/* Controles flotantes de navegación Street View */}
+      <div className="pano-controls" role="toolbar" aria-label="Controles Street View">
+        {/* Brújula interactiva con aguja que apunta al Norte */}
+        <button
+          type="button"
+          className="pano-ctrl-btn pano-ctrl-compass"
+          onClick={resetNorth}
+          title={t('resetNorth') || 'Orientar al Norte'}
+          aria-label={t('resetNorth') || 'Orientar al Norte'}
+        >
+          <div className="pano-compass-ring" style={{ transform: `rotate(${-headingDeg}deg)` }}>
+            <span className="pano-compass-n">N</span>
+            <span className="pano-compass-needle" />
+            <span className="pano-compass-s">S</span>
+          </div>
+        </button>
+
+        <div className="pano-ctrl-group">
+          <button
+            type="button"
+            className="pano-ctrl-btn"
+            onClick={zoomIn}
+            title={t('zoomIn') || 'Acercar'}
+            aria-label={t('zoomIn') || 'Acercar'}
+          >
+            <Plus size={16} />
+          </button>
+          <button
+            type="button"
+            className="pano-ctrl-btn"
+            onClick={zoomOut}
+            title={t('zoomOut') || 'Alejar'}
+            aria-label={t('zoomOut') || 'Alejar'}
+          >
+            <Minus size={16} />
+          </button>
+        </div>
+
+        {hasGyroSupport && (
+          <button
+            type="button"
+            className={`pano-ctrl-btn ${gyroActive ? 'pano-ctrl-btn--active' : ''}`}
+            onClick={toggleGyro}
+            title={gyroActive ? t('gyroActive') || 'Giroscopio activo' : t('gyroscope') || 'Giroscopio'}
+            aria-label={t('gyroscope') || 'Giroscopio'}
+          >
+            <Smartphone size={16} />
+          </button>
+        )}
+
+        <button
+          type="button"
+          className="pano-ctrl-btn"
+          onClick={toggleFullscreen}
+          title={isFullscreen ? t('exitFullscreen') || 'Salir' : t('fullscreen') || 'Pantalla completa'}
+          aria-label={t('fullscreen') || 'Pantalla completa'}
+        >
+          {isFullscreen ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
+        </button>
+      </div>
+
+      {/* Hotspots interactivos */}
       <div ref={hotspotsRef} className="pano__hotspots">
         {hotspots.map((spot) => (
           <button
@@ -455,6 +702,7 @@ export default function Panorama360({
           </button>
         ))}
       </div>
+
       {overlayTop}
     </div>
   );

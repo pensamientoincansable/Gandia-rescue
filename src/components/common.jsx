@@ -91,6 +91,10 @@ export function Radar({ t, gps, heading, doneCases, selectedCaseId, onSelect, co
         <line x1={c - rMax} y1={c} x2={c + rMax} y2={c} className="radar-axis" />
         <text x={c} y={11} className="radar-north">N</text>
         <g className="radar-sweep"><path d={`M${c} ${c} L${c - rMax} ${c - 26} A ${rMax} ${rMax} 0 0 1 ${c + 26} ${c - rMax * 0.93} Z`} /></g>
+        {/* Haz de visión del jugador estilo Street View / radar Google */}
+        <g className="radar-fov">
+          <path d={`M${c} ${c} L${c - 38} ${c - rMax * 0.9} A ${rMax * 0.9} ${rMax * 0.9} 0 0 1 ${c + 38} ${c - rMax * 0.9} Z`} className="radar-fov__cone" />
+        </g>
         {dots.map((d) => (
           <g key={d.id} className={`radar-dot ${d.done ? 'is-done' : ''} ${selectedCaseId === d.id ? 'is-selected' : ''}`} onClick={() => onSelect(d.id)}>
             <circle cx={d.x} cy={d.y} r="7" className="radar-dot__halo" />
@@ -260,7 +264,7 @@ const MAP_LAYOUT = {
   port: { x: 336, y: 118 },
 };
 
-export function TravelMap({ t, currentZone, onTravel, doneCases, gpsPosition }) {
+export function TravelMap({ t, currentZone, onTravel, doneCases, gpsPosition, heading = null }) {
   const links = [];
   const seen = new Set();
   for (const [from, list] of Object.entries(ZONE_LINKS)) {
@@ -289,6 +293,23 @@ export function TravelMap({ t, currentZone, onTravel, doneCases, gpsPosition }) 
           const active = a === currentZone || b === currentZone;
           return <line key={`${a}-${b}`} x1={A.x} y1={A.y} x2={B.x} y2={B.y} className={`travel-map__link ${active ? 'is-active' : ''}`} />;
         })}
+        {heading != null && (() => {
+          const pos = MAP_LAYOUT[currentZone];
+          if (!pos) return null;
+          const radAngle = ((heading - 90) * Math.PI) / 180;
+          const fovLen = 34;
+          const fovSpread = 0.5;
+          const x1 = pos.x + Math.cos(radAngle - fovSpread) * fovLen;
+          const y1 = pos.y + Math.sin(radAngle - fovSpread) * fovLen;
+          const x2 = pos.x + Math.cos(radAngle + fovSpread) * fovLen;
+          const y2 = pos.y + Math.sin(radAngle + fovSpread) * fovLen;
+          return (
+            <g className="travel-map__fov" pointerEvents="none">
+              <path d={`M${pos.x} ${pos.y} L${x1} ${y1} A ${fovLen} ${fovLen} 0 0 1 ${x2} ${y2} Z`} className="travel-map__fov-cone" />
+              <line x1={pos.x} y1={pos.y} x2={pos.x + Math.cos(radAngle) * (fovLen + 4)} y2={pos.y + Math.sin(radAngle) * (fovLen + 4)} className="travel-map__fov-needle" />
+            </g>
+          );
+        })()}
         {ZONES.map((z) => {
           const pos = MAP_LAYOUT[z.id];
           const isCurrent = z.id === currentZone;
