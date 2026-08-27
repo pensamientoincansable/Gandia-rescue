@@ -24,6 +24,7 @@ export const copy = {
 
     leave: 'Salir', gpsOn: 'GPS activo', gpsOff: 'GPS no disponible', compassDir: 'N|NE|E|SE|S|SO|O|NO',
     moveHint: 'Arrastra para mirar · toca las flechas para desplazarte', zoomHint: 'Rueda o pellizco para acercar',
+    panoLoading: 'Cargando la vista 360°…', panoError: 'No se ha podido cargar la imagen 360° de esta zona.',
     equipment: 'Equipo', food: 'Alimento', care: 'Botiquín', torch: 'Linterna', radio: 'Central',
     currentCase: 'Aviso activo', nearby: 'Radar de avisos', distance: 'Distancia', near: 'CERCA', mid: 'EN CAMINO', far: 'LEJOS',
     intervene: 'Atender el aviso', approach: 'Protocolo de ayuda', chooseAction: 'Elige la ayuda adecuada según el estado del animal.',
@@ -88,6 +89,7 @@ export const copy = {
 
     leave: 'Eixir', gpsOn: 'GPS actiu', gpsOff: 'GPS no disponible', compassDir: 'N|NE|E|SE|S|SO|O|NO',
     moveHint: 'Arrossega per a mirar · toca les fletxes per a desplaçar-te', zoomHint: 'Roda o pessigada per a apropar',
+    panoLoading: 'Carregant la vista 360°…', panoError: "No s'ha pogut carregar la imatge 360° d'aquesta zona.",
     equipment: 'Equip', food: 'Aliment', care: 'Farmaciola', torch: 'Llanterna', radio: 'Central',
     currentCase: 'Avís actiu', nearby: 'Radar d\'avisos', distance: 'Distància', near: 'A PROP', mid: 'EN CAMÍ', far: 'LLUNY',
     intervene: "Atendre l'avís", approach: "Protocol d'ajuda", chooseAction: "Tria l'ajuda adequada segons l'estat de l'animal.",
@@ -152,6 +154,7 @@ export const copy = {
 
     leave: 'Exit', gpsOn: 'GPS active', gpsOff: 'GPS unavailable', compassDir: 'N|NE|E|SE|S|SW|W|NW',
     moveHint: 'Drag to look around · tap the arrows to move', zoomHint: 'Scroll or pinch to zoom',
+    panoLoading: 'Loading the 360° view…', panoError: 'The 360° image for this area could not be loaded.',
     equipment: 'Equipment', food: 'Food', care: 'First aid', torch: 'Torch', radio: 'Control',
     currentCase: 'Active alert', nearby: 'Alert radar', distance: 'Distance', near: 'CLOSE', mid: 'ON THE WAY', far: 'FAR',
     intervene: 'Respond to alert', approach: 'Care protocol', chooseAction: "Choose the appropriate care for the animal's condition.",

@@ -49,6 +49,24 @@ principal (perfil → menú → rescate → refugio → exploración → persist
 npx vite build && node scripts/smoke.mjs
 ```
 
+## Prueba de los panoramas 360°
+
+`scripts/pano-check.mjs` monta el bundle con un contexto WebGL instrumentado y
+descargas HTTP reales para comprobar que la imagen equirectangular de cada zona
+se descarga (sin 404), se sube como textura y se dibuja en cada fotograma, tanto
+en el bundle de `dist/` como en el de `static/` servido desde un subdirectorio
+como hace GitHub Pages:
+
+```bash
+npm run build && npm run check:pano
+```
+
+Los panoramas viven en `src/assets/panoramas/` y se importan desde
+`src/lib/game.js`: así Vite genera para cada build una URL válida relativa al
+propio bundle. No deben referenciarse con rutas sueltas tipo
+`panoramas/platja.jpg`, porque se resuelven contra el documento y devuelven 404
+cuando el sitio no se publica en la raíz del dominio.
+
 ## Despliegue en GitHub Pages
 
 GitHub Pages está configurado para servir directamente la raíz de `main`. Como ese
