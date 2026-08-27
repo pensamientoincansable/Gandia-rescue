@@ -62,6 +62,8 @@ export default function Panorama360({
   onLook,                   // ({headingDeg, pitchDeg, fovDeg}) => void (aprox. 8 Hz)
   className = '',
   overlayTop = null,        // nodo React opcional sobre el canvas
+  loadingLabel = 'Cargando panorama 360°…',
+  errorLabel = 'No se ha podido cargar la imagen 360°.',
 }) {
   const containerRef = useRef(null);
   const canvasRef = useRef(null);
@@ -82,6 +84,13 @@ export default function Panorama360({
   const texturesRef = useRef(new Map());
   const activeTexRef = useRef(null);
   const [webglFailed, setWebglFailed] = useState(false);
+  /* Se incrementa para volver a montar el motor tras `webglcontextrestored`. */
+  const [initToken, setInitToken] = useState(0);
+  /* Se incrementa cada vez que hay un contexto WebGL listo (montaje inicial y
+     restauración tras `webglcontextrestored`): las texturas se vuelven a subir. */
+  const [glEpoch, setGlEpoch] = useState(0);
+  /* Estado de carga de la imagen equirectangular: 'loading' | 'ready' | 'error'. */
+  const [imageState, setImageState] = useState('loading');
   /* onLook se guarda en un ref para que el bucle RAF nunca use un cierre obsoleto. */
   const onLookRef = useRef(onLook);
   onLookRef.current = onLook;
@@ -92,22 +101,41 @@ export default function Panorama360({
     const canvas = canvasRef.current;
     if (!container || !canvas) return undefined;
 
+    /* El contexto se pierde si el navegador lo recicla; en ese caso se vuelve a
+       montar el motor completo cuando el navegador lo restaura. */
+    const onContextLost = (event) => {
+      event.preventDefault();
+      activeTexRef.current = null;
+      texturesRef.current.clear();
+      glRef.current = null;
+    };
+    const onContextRestored = () => setInitToken((n) => n + 1);
+    canvas.addEventListener('webglcontextlost', onContextLost);
+    canvas.addEventListener('webglcontextrestored', onContextRestored);
+
     const gl = canvas.getContext('webgl', { antialias: false, alpha: false }) || canvas.getContext('experimental-webgl');
-    if (!gl) {
+    if (!gl || gl.isContextLost?.()) {
       setWebglFailed(true);
       container.classList.add('pano--flat');
-      return undefined;
+      return () => {
+        canvas.removeEventListener('webglcontextlost', onContextLost);
+        canvas.removeEventListener('webglcontextrestored', onContextRestored);
+      };
     }
     glRef.current = gl;
 
     const vs = compile(gl, gl.VERTEX_SHADER, VERT_SRC);
     const fs = compile(gl, gl.FRAGMENT_SHADER, FRAG_SRC);
-    if (!vs || !fs) { setWebglFailed(true); return undefined; }
+    const removeContextListeners = () => {
+      canvas.removeEventListener('webglcontextlost', onContextLost);
+      canvas.removeEventListener('webglcontextrestored', onContextRestored);
+    };
+    if (!vs || !fs) { setWebglFailed(true); return removeContextListeners; }
     const program = gl.createProgram();
     gl.attachShader(program, vs);
     gl.attachShader(program, fs);
     gl.linkProgram(program);
-    if (!gl.getProgramParameter(program, gl.LINK_STATUS)) { setWebglFailed(true); return undefined; }
+    if (!gl.getProgramParameter(program, gl.LINK_STATUS)) { setWebglFailed(true); return removeContextListeners; }
     gl.useProgram(program);
     programRef.current = program;
 
@@ -128,6 +156,10 @@ export default function Panorama360({
       tan: gl.getUniformLocation(program, 'uTan'),
       aspect: gl.getUniformLocation(program, 'uAspect'),
     };
+
+    setWebglFailed(false);
+    /* Aviso al efecto de texturas: hay contexto listo al que subir la imagen. */
+    setGlEpoch((n) => n + 1);
 
     let raf = 0;
     let lastT = performance.now();
@@ -169,9 +201,14 @@ export default function Panorama360({
 
       const tex = activeTexRef.current;
       const gl2 = glRef.current;
-      if (gl2 && tex) {
+      if (gl2 && !gl2.isContextLost() && tex) {
         gl2.clearColor(0.04, 0.08, 0.07, 1);
         gl2.clear(gl2.COLOR_BUFFER_BIT);
+        /* La textura activa se vuelve a enlazar en cada fotograma: al viajar a
+           una zona ya visitada se reutiliza una textura cacheada que no queda
+           enlazada automáticamente y se seguiría viendo el panorama anterior. */
+        gl2.activeTexture(gl2.TEXTURE0);
+        gl2.bindTexture(gl2.TEXTURE_2D, tex);
         const yaw = st.yaw;
         const pitch = st.pitch;
         const cp = Math.cos(pitch);
@@ -241,38 +278,66 @@ export default function Panorama360({
       running = false;
       cancelAnimationFrame(raf);
       ro?.disconnect();
-      const ext = gl.getExtension('WEBGL_lose_context');
-      ext?.loseContext();
+      removeContextListeners();
+      /* No se fuerza `WEBGL_lose_context`: el contexto quedaba inutilizable y,
+         al remontar el componente (React StrictMode remonta cada efecto en
+         desarrollo), `getContext` devolvía el mismo contexto ya perdido y el
+         panorama no volvía a dibujarse nunca. */
+      if (!gl.isContextLost()) {
+        for (const tex of texturesRef.current.values()) gl.deleteTexture(tex);
+        gl.deleteBuffer(buffer);
+        gl.deleteProgram(program);
+        gl.deleteShader(vs);
+        gl.deleteShader(fs);
+      }
+      texturesRef.current.clear();
+      activeTexRef.current = null;
       glRef.current = null;
       programRef.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [initToken]);
 
   /* ------------------------------------------------ carga de texturas */
   useEffect(() => {
     const gl = glRef.current;
-    if (!gl || webglFailed) return;
+    /* Sin WebGL se sigue cargando la imagen para el respaldo plano y para saber
+       si la descarga ha funcionado. */
+    const useGl = !!gl && !webglFailed && !gl.isContextLost();
     const image = new Image();
     let cancelled = false;
+    setImageState((prev) => (prev === 'ready' ? prev : 'loading'));
     image.onload = () => {
       if (cancelled) return;
-      let tex = texturesRef.current.get(src);
-      if (!tex) {
-        tex = gl.createTexture();
-        gl.bindTexture(gl.TEXTURE_2D, tex);
-        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, image);
-        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-        texturesRef.current.set(src, tex);
+      const gl2 = glRef.current;
+      if (useGl && gl2 && !gl2.isContextLost()) {
+        let tex = texturesRef.current.get(src);
+        if (!tex) {
+          tex = gl2.createTexture();
+          gl2.activeTexture(gl2.TEXTURE0);
+          gl2.bindTexture(gl2.TEXTURE_2D, tex);
+          gl2.pixelStorei(gl2.UNPACK_FLIP_Y_WEBGL, false);
+          gl2.texImage2D(gl2.TEXTURE_2D, 0, gl2.RGBA, gl2.RGBA, gl2.UNSIGNED_BYTE, image);
+          gl2.texParameteri(gl2.TEXTURE_2D, gl2.TEXTURE_WRAP_S, gl2.CLAMP_TO_EDGE);
+          gl2.texParameteri(gl2.TEXTURE_2D, gl2.TEXTURE_WRAP_T, gl2.CLAMP_TO_EDGE);
+          gl2.texParameteri(gl2.TEXTURE_2D, gl2.TEXTURE_MIN_FILTER, gl2.LINEAR);
+          gl2.texParameteri(gl2.TEXTURE_2D, gl2.TEXTURE_MAG_FILTER, gl2.LINEAR);
+          texturesRef.current.set(src, tex);
+        }
+        activeTexRef.current = tex;
       }
-      activeTexRef.current = tex;
+      setImageState('ready');
+    };
+    /* Antes un 404 (o cualquier error de red) fallaba en silencio y el visor se
+       quedaba en negro sin explicación: ahora se avisa por consola y en pantalla. */
+    image.onerror = () => {
+      if (cancelled) return;
+      console.error('[Gandía] No se ha podido cargar el panorama 360°:', src);
+      setImageState('error');
     };
     image.src = src;
     return () => { cancelled = true; };
-  }, [src]);
+  }, [src, webglFailed, glEpoch]);
 
   /* ------------------------------------------------ interacción */
   useEffect(() => {
@@ -367,7 +432,14 @@ export default function Panorama360({
   return (
     <div ref={containerRef} className={`pano ${className}`} tabIndex={0} role="application" aria-label="Vista 360 grados">
       <canvas ref={canvasRef} className="pano__canvas" />
-      {webglFailed && <div className="pano__flat-img" style={{ backgroundImage: `url(${src})` }} />}
+      {(webglFailed || imageState === 'error') && (
+        <div className="pano__flat-img" style={{ backgroundImage: `url(${src})` }} />
+      )}
+      {imageState !== 'ready' && (
+        <div className={`pano__notice ${imageState === 'error' ? 'pano__notice--error' : ''}`} role="status" aria-live="polite">
+          {imageState === 'error' ? errorLabel : loadingLabel}
+        </div>
+      )}
       <div ref={hotspotsRef} className="pano__hotspots">
         {hotspots.map((spot) => (
           <button

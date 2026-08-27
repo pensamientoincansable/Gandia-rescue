@@ -1,6 +1,23 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 /* ------------------------------------------------------------------ */
+/* Panoramas 360°                                                      */
+/* ------------------------------------------------------------------ */
+/**
+ * Los panoramas se importan como assets del bundle en lugar de usar rutas
+ * sueltas tipo `panoramas/platja.jpg`. Esas rutas se resolvían respecto al
+ * documento, así que sólo funcionaban con el index en la raíz: en GitHub Pages
+ * (donde el bundle vive en `static/`) devolvían 404 y el visor 360° se quedaba
+ * en negro. Importándolas, Vite emite la URL correcta en cada build.
+ */
+import panoPlatja from '../assets/panoramas/platja.jpg';
+import panoPort from '../assets/panoramas/port.jpg';
+import panoMarjal from '../assets/panoramas/marjal.jpg';
+import panoRiu from '../assets/panoramas/riu.jpg';
+import panoCasc from '../assets/panoramas/casc.jpg';
+import panoMontduver from '../assets/panoramas/montduver.jpg';
+
+/* ------------------------------------------------------------------ */
 /* Acceso seguro a localStorage                                        */
 /* ------------------------------------------------------------------ */
 export const safeStorage = {
@@ -40,12 +57,12 @@ export function levelProgress(xp) {
 /* Zonas 360° de Gandía                                                */
 /* ------------------------------------------------------------------ */
 export const ZONES = [
-  { id: 'platja',    img: 'panoramas/platja.jpg',    lat: 38.99450, lng: 0.16380, north: 205, initialYaw: 5 },
-  { id: 'port',      img: 'panoramas/port.jpg',      lat: 38.99020, lng: 0.15460, north: 150, initialYaw: -20 },
-  { id: 'marjal',    img: 'panoramas/marjal.jpg',    lat: 39.00210, lng: 0.15030, north: 310, initialYaw: 30 },
-  { id: 'riu',       img: 'panoramas/riu.jpg',       lat: 38.97010, lng: -0.16200, north: 20, initialYaw: 10 },
-  { id: 'casc',      img: 'panoramas/casc.jpg',      lat: 38.96710, lng: -0.17270, north: 340, initialYaw: 0 },
-  { id: 'montduver', img: 'panoramas/montduver.jpg', lat: 38.91830, lng: -0.22700, north: 80, initialYaw: 15 },
+  { id: 'platja',    img: panoPlatja,    lat: 38.99450, lng: 0.16380, north: 205, initialYaw: 5 },
+  { id: 'port',      img: panoPort,      lat: 38.99020, lng: 0.15460, north: 150, initialYaw: -20 },
+  { id: 'marjal',    img: panoMarjal,    lat: 39.00210, lng: 0.15030, north: 310, initialYaw: 30 },
+  { id: 'riu',       img: panoRiu,       lat: 38.97010, lng: -0.16200, north: 20, initialYaw: 10 },
+  { id: 'casc',      img: panoCasc,      lat: 38.96710, lng: -0.17270, north: 340, initialYaw: 0 },
+  { id: 'montduver', img: panoMontduver, lat: 38.91830, lng: -0.22700, north: 80, initialYaw: 15 },
 ];
 
 /** Conexiones a pie entre panoramas (navegación estilo Street View). */

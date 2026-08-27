@@ -161,6 +161,8 @@ export default function RescueMode({
         sensitivity={sensitivity}
         initialYaw={zone.initialYaw}
         onLook={({ headingDeg }) => setRawYaw(headingDeg - zone.north)}
+        loadingLabel={t('panoLoading')}
+        errorLabel={t('panoError')}
       />
       <div className="game-vignette" />
 
