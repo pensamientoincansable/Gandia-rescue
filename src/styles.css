@@ -1023,3 +1023,684 @@ kbd { min-width: 18px; height: 18px; display: grid; place-items: center; border:
 @media (max-width: 420px) {
   .rescue-map-panel { display: block; }
 }
+
+/* ================================================================== */
+/* v3 — Entorno 3D Three.js, Furgoneta de Rescate, Diálogos y Fotos    */
+/* ================================================================== */
+
+/* Contenedor Three.js */
+.gandia-3d-wrapper {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 1;
+  background: #0d1a16;
+}
+
+/* Botón contextual de interacción (Animal, Lugareño, Pista) */
+.interaction-prompt {
+  position: absolute;
+  z-index: 25;
+  bottom: calc(90px + var(--safe-bottom));
+  left: 50%;
+  transform: translateX(-50%);
+  animation: promptBounce .3s cubic-bezier(.34, 1.56, .64, 1) both;
+  pointer-events: auto;
+}
+@keyframes promptBounce {
+  from { opacity: 0; transform: translate(-50%, 15px) scale(0.92); }
+  to { opacity: 1; transform: translate(-50%, 0) scale(1); }
+}
+
+.interaction-btn {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 20px 10px 12px;
+  border-radius: 40px;
+  border: 1.5px solid rgba(255, 255, 255, 0.35);
+  background: linear-gradient(135deg, rgba(13, 38, 30, 0.95), rgba(8, 20, 16, 0.95));
+  backdrop-filter: blur(16px);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: .02em;
+  cursor: pointer;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.5), 0 0 24px rgba(0, 168, 143, 0.35);
+  transition: transform .15s ease, border-color .15s ease, box-shadow .15s ease;
+}
+.interaction-btn:hover {
+  transform: scale(1.05);
+  border-color: #7ee0c9;
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.6), 0 0 32px rgba(0, 168, 143, 0.5);
+}
+.interaction-btn__key {
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  border-radius: 8px;
+  background: linear-gradient(145deg, var(--orange), #d95f30);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 900;
+  box-shadow: 0 4px 10px rgba(240, 111, 60, 0.4);
+}
+.interaction-btn--npc .interaction-btn__key {
+  background: linear-gradient(145deg, #00a88f, #007f6c);
+  box-shadow: 0 4px 10px rgba(0, 168, 143, 0.4);
+}
+.interaction-btn--clue .interaction-btn__key {
+  background: linear-gradient(145deg, #f1c40f, #d4ac0d);
+  box-shadow: 0 4px 10px rgba(241, 196, 15, 0.4);
+  color: #3e3002;
+}
+
+/* ---------- Dashboard e instrumentación de la furgoneta ---------- */
+.van-hud-container {
+  position: absolute;
+  inset: 0;
+  z-index: 6;
+  pointer-events: none;
+}
+.van-dashboard {
+  position: absolute;
+  top: 78px;
+  left: 28px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 10px 16px;
+  border-radius: 16px;
+  pointer-events: auto;
+}
+.van-speed-gauge {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+}
+.van-speed-val {
+  font-family: 'Montserrat', monospace, sans-serif;
+  font-size: 26px;
+  font-weight: 900;
+  color: #fff;
+  line-height: 1;
+}
+.van-speed-unit {
+  color: var(--orange-bright);
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: .08em;
+}
+.van-gear-indicator {
+  display: flex;
+  gap: 4px;
+  padding: 3px 6px;
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.35);
+}
+.gear-chip {
+  padding: 2px 6px;
+  border-radius: 5px;
+  color: rgba(255, 255, 255, 0.35);
+  font-size: 10px;
+  font-weight: 800;
+}
+.gear-chip.is-active {
+  background: var(--orange);
+  color: #fff;
+  box-shadow: 0 2px 6px rgba(240, 111, 60, 0.4);
+}
+.van-status-row {
+  display: flex;
+  gap: 6px;
+}
+.van-chip {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 8px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.75);
+  font-size: 8px;
+  font-weight: 800;
+  letter-spacing: .05em;
+}
+.van-chip.is-siren-on {
+  background: rgba(0, 180, 216, 0.25);
+  border: 1px solid rgba(0, 180, 216, 0.5);
+  color: #90e0ef;
+  animation: sirenPulse 1s ease-in-out infinite alternate;
+}
+@keyframes sirenPulse {
+  to { border-color: rgba(255, 183, 3, 0.9); box-shadow: 0 0 12px rgba(0, 180, 216, 0.4); }
+}
+
+/* Barra de herramientas / acciones de la furgoneta */
+.van-actions-toolbar {
+  position: absolute;
+  bottom: 24px;
+  left: 28px;
+  display: flex;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 16px;
+  pointer-events: auto;
+}
+.van-tool-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.05);
+  color: rgba(255, 255, 255, 0.75);
+  font-size: 10px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: .15s ease;
+}
+.van-tool-btn:hover {
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+  border-color: rgba(255, 255, 255, 0.3);
+}
+.van-tool-btn.is-active {
+  background: rgba(0, 168, 143, 0.25);
+  border-color: #00a88f;
+  color: #7ee0c9;
+}
+.van-tool-btn.is-siren {
+  background: rgba(240, 111, 60, 0.25);
+  border-color: var(--orange);
+  color: #ffc59c;
+}
+
+/* Controles táctiles móviles en pantalla */
+.van-touch-controls {
+  display: none;
+  pointer-events: auto;
+}
+@media (max-width: 900px), (pointer: coarse) {
+  .van-touch-controls {
+    display: flex;
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+  }
+  .touch-dpad-left {
+    position: absolute;
+    left: 16px;
+    bottom: calc(24px + var(--safe-bottom));
+    display: flex;
+    gap: 12px;
+    pointer-events: auto;
+  }
+  .touch-pedals-right {
+    position: absolute;
+    right: 16px;
+    bottom: calc(24px + var(--safe-bottom));
+    display: flex;
+    gap: 12px;
+    pointer-events: auto;
+  }
+  .touch-btn {
+    width: 62px;
+    height: 62px;
+    border-radius: 20px;
+    border: 1.5px solid rgba(255, 255, 255, 0.22);
+    background: rgba(10, 24, 19, 0.82);
+    backdrop-filter: blur(14px);
+    color: #fff;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 2px;
+    cursor: pointer;
+    box-shadow: 0 10px 25px rgba(0, 0, 0, 0.4);
+    touch-action: none;
+    user-select: none;
+  }
+  .touch-btn:active {
+    transform: scale(0.92);
+    background: rgba(0, 168, 143, 0.35);
+  }
+  .touch-btn--gas {
+    background: linear-gradient(145deg, rgba(0, 168, 143, 0.6), rgba(0, 110, 95, 0.7));
+    border-color: #00a88f;
+    width: 68px;
+    height: 68px;
+  }
+  .touch-btn--brake {
+    background: linear-gradient(145deg, rgba(230, 80, 50, 0.5), rgba(160, 40, 20, 0.6));
+    border-color: #e65032;
+    width: 60px;
+    height: 60px;
+  }
+  .touch-btn small {
+    font-size: 8px;
+    font-weight: 800;
+    text-transform: uppercase;
+  }
+  .van-dashboard {
+    top: calc(70px + env(safe-area-inset-top));
+    left: 12px;
+    padding: 6px 10px;
+    gap: 8px;
+  }
+  .van-speed-val { font-size: 18px; }
+  .van-actions-toolbar {
+    bottom: calc(105px + var(--safe-bottom));
+    left: 12px;
+    gap: 4px;
+    padding: 5px 7px;
+  }
+  .van-tool-btn { padding: 5px 8px; font-size: 8px; }
+  .van-tool-btn span { display: none; }
+}
+
+/* ---------- Modal de diálogo con lugareños ---------- */
+.modal-layer--dialogue {
+  background: rgba(2, 8, 6, 0.65) !important;
+}
+.dialogue-box {
+  width: min(640px, calc(100% - 24px));
+  max-height: calc(100dvh - 40px);
+  overflow-y: auto;
+  border-radius: 22px;
+  border: 1.5px solid rgba(0, 168, 143, 0.35);
+  background: rgba(8, 20, 16, 0.96);
+  box-shadow: 0 30px 100px rgba(0, 0, 0, 0.7);
+  animation: modalIn .25s ease both;
+}
+.dialogue-box__header {
+  padding: 18px 22px;
+  border-bottom: 1px solid var(--line);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.npc-identity {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+.npc-avatar {
+  font-size: 34px;
+  width: 52px;
+  height: 52px;
+  display: grid;
+  place-items: center;
+  border-radius: 16px;
+  background: linear-gradient(145deg, rgba(0, 168, 143, 0.2), rgba(0, 168, 143, 0.05));
+  border: 1px solid rgba(0, 168, 143, 0.35);
+}
+.npc-identity h3 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 800;
+  color: #fff;
+}
+.npc-identity small {
+  color: #8fe0c8;
+  font-size: 11px;
+  font-weight: 700;
+}
+.dialogue-box__content {
+  padding: 22px;
+}
+.dialogue-bubble {
+  padding: 18px 20px;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  margin-bottom: 20px;
+  position: relative;
+}
+.dialogue-bubble p {
+  margin: 0;
+  color: #f1f6f4;
+  font-size: 13.5px;
+  line-height: 1.65;
+  font-weight: 500;
+}
+.dialogue-topics {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.topics-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--orange-bright);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+}
+.topics-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.topic-btn {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.04);
+  color: #e2ede8;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  text-align: left;
+  transition: .15s ease;
+}
+.topic-btn:hover {
+  background: rgba(0, 168, 143, 0.15);
+  border-color: #00a88f;
+  color: #fff;
+  transform: translateX(4px);
+}
+.topic-btn.is-current {
+  background: rgba(0, 168, 143, 0.25);
+  border-color: #00a88f;
+  color: #8fe0c8;
+}
+.topic-btn.is-visited {
+  border-color: rgba(99, 183, 171, 0.3);
+}
+.topic-btn.is-visited svg {
+  color: #63b7ab;
+}
+.dialogue-box__footer {
+  padding: 16px 22px;
+  border-top: 1px solid var(--line);
+}
+
+/* ---------- Modal de Pistas medioambientales ---------- */
+.modal-layer--clue {
+  background: rgba(2, 8, 6, 0.65) !important;
+}
+.clue-box {
+  width: min(560px, calc(100% - 24px));
+  border-radius: 20px;
+  border: 1.5px solid rgba(241, 196, 15, 0.35);
+  background: rgba(16, 20, 10, 0.96);
+  box-shadow: 0 30px 100px rgba(0, 0, 0, 0.7);
+  animation: modalIn .25s ease both;
+}
+.clue-box__header {
+  padding: 18px 22px;
+  border-bottom: 1px solid rgba(241, 196, 15, 0.2);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.clue-badge {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+.clue-emoji {
+  font-size: 32px;
+  width: 48px;
+  height: 48px;
+  display: grid;
+  place-items: center;
+  border-radius: 14px;
+  background: rgba(241, 196, 15, 0.15);
+  border: 1px solid rgba(241, 196, 15, 0.4);
+}
+.clue-kicker {
+  color: #f1c40f;
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+}
+.clue-badge h3 {
+  margin: 2px 0 0;
+  font-size: 16px;
+  font-weight: 800;
+  color: #fff;
+}
+.clue-box__body {
+  padding: 22px;
+}
+.clue-desc p {
+  margin: 0;
+  color: #f4ede0;
+  font-size: 13.5px;
+  line-height: 1.6;
+}
+.clue-bonus-row {
+  margin-top: 18px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.clue-bonus-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: 20px;
+  background: rgba(241, 196, 15, 0.15);
+  border: 1px solid rgba(241, 196, 15, 0.4);
+  color: #f9e79f;
+  font-size: 11px;
+  font-weight: 800;
+}
+.clue-hint-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: rgba(255, 255, 255, 0.75);
+  font-size: 10.5px;
+  font-weight: 700;
+}
+.clue-box__footer {
+  padding: 16px 22px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+/* ---------- Modo Cámara de Guardián 3D (Photo Mode) ---------- */
+.photo-mode-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 50;
+  background: transparent;
+  pointer-events: auto;
+}
+.photo-flash {
+  position: absolute;
+  inset: 0;
+  background: #ffffff;
+  z-index: 99;
+  animation: flashFade .2s ease-out both;
+}
+@keyframes flashFade {
+  from { opacity: 0.9; }
+  to { opacity: 0; }
+}
+
+/* Filtros fotográficos */
+.photo-mode-overlay.filter-wildlife {
+  filter: sepia(0.25) contrast(1.1) saturate(1.2);
+}
+.photo-mode-overlay.filter-thermal {
+  filter: invert(0.8) hue-rotate(180deg) contrast(1.4);
+}
+.photo-mode-overlay.filter-coast {
+  filter: hue-rotate(15deg) saturate(1.35) contrast(1.08);
+}
+
+/* Visor y retícula de la cámara */
+.photo-viewfinder {
+  position: absolute;
+  inset: 40px;
+  pointer-events: none;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+}
+.viewfinder-corner {
+  position: absolute;
+  width: 24px;
+  height: 24px;
+  border-color: rgba(255, 255, 255, 0.85);
+  border-style: solid;
+}
+.viewfinder-corner.top-left { top: -2px; left: -2px; border-width: 3px 0 0 3px; }
+.viewfinder-corner.top-right { top: -2px; right: -2px; border-width: 3px 3px 0 0; }
+.viewfinder-corner.bottom-left { bottom: -2px; left: -2px; border-width: 0 0 3px 3px; }
+.viewfinder-corner.bottom-right { bottom: -2px; right: -2px; border-width: 0 3px 3px 0; }
+
+.viewfinder-grid {
+  position: absolute;
+  inset: 0;
+}
+.grid-h1 { position: absolute; left: 0; right: 0; top: 33.33%; height: 1px; background: rgba(255, 255, 255, 0.18); }
+.grid-h2 { position: absolute; left: 0; right: 0; top: 66.66%; height: 1px; background: rgba(255, 255, 255, 0.18); }
+.grid-v1 { position: absolute; top: 0; bottom: 0; left: 33.33%; width: 1px; background: rgba(255, 255, 255, 0.18); }
+.grid-v2 { position: absolute; top: 0; bottom: 0; left: 66.66%; width: 1px; background: rgba(255, 255, 255, 0.18); }
+
+.viewfinder-center-cross {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 20px;
+  height: 20px;
+}
+.viewfinder-center-cross span {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  border: 1.5px solid rgba(255, 255, 255, 0.7);
+  transform: translate(-50%, -50%);
+}
+
+.photo-hud-top {
+  position: absolute;
+  top: 20px;
+  left: 40px;
+  right: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.photo-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  border-radius: 30px;
+  background: rgba(0, 0, 0, 0.65);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+}
+.photo-rec-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #e63946;
+  animation: blink 1s infinite alternate;
+}
+.photo-meta strong {
+  font-size: 11px;
+  letter-spacing: .08em;
+}
+.photo-meta small {
+  color: #7ee0c9;
+  font-size: 9px;
+  font-weight: 700;
+}
+.photo-close-btn {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  background: rgba(0, 0, 0, 0.65);
+  color: #fff;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+}
+
+.photo-filters-bar {
+  position: absolute;
+  right: 40px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.photo-filter-btn {
+  padding: 8px 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: rgba(0, 0, 0, 0.65);
+  backdrop-filter: blur(10px);
+  color: rgba(255, 255, 255, 0.75);
+  font-size: 10px;
+  font-weight: 700;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  transition: .15s ease;
+}
+.photo-filter-btn:hover, .photo-filter-btn.is-active {
+  background: rgba(0, 168, 143, 0.35);
+  border-color: #00a88f;
+  color: #fff;
+}
+
+.photo-hud-bottom {
+  position: absolute;
+  bottom: 24px;
+  left: 50%;
+  transform: translateX(-50%);
+}
+.photo-shutter-btn {
+  width: 72px;
+  height: 72px;
+  border-radius: 50%;
+  border: 3px solid rgba(255, 255, 255, 0.85);
+  background: transparent;
+  padding: 4px;
+  cursor: pointer;
+  transition: transform .15s ease;
+}
+.photo-shutter-btn:hover {
+  transform: scale(1.08);
+}
+.photo-shutter-btn:active {
+  transform: scale(0.92);
+}
+.shutter-inner {
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  background: linear-gradient(145deg, #ffffff, #dcdcdc);
+  color: #1a2e26;
+  display: grid;
+  place-items: center;
+  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.4);
+}
+
