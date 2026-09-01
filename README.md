@@ -81,3 +81,83 @@ en `static/` junto con el código fuente.
 
 El prototipo está preparado como una capa de experiencia web para conectar
 posteriormente proveedores reales de WebXR, servicios de mapas 3D y guardado en la nube.
+
+## Arquitectura: datos separados del código
+
+La jugabilidad está **desacoplada del código**. Ningún valor numérico, tecla ni
+tabla de daño vive dentro de la lógica: todo se declara en JSON editable y se
+carga en tiempo de ejecución con `fetch()`.
+
+### Datos de configuración — `public/config/`
+
+| Fichero | Contenido |
+| --- | --- |
+| `keybindings.json` | Mapeo de teclado, ratón y gamepad a **acciones abstractas** (`MOVE_FORWARD`, `JUMP`, `DASH`, `ATTACK_LIGHT`, `INTERACT`…), más ajustes de zona muerta y sensibilidad. |
+| `player_stats.json` | Física y parámetros de jugabilidad: velocidad, aceleración, frenado, fricción, dirección, gravedad, salto, vida y resistencia máximas, cámaras, radios de interacción, progresión y audio. |
+| `moveset.json` | Sistema de combate: movimientos con *startup/active/recovery frames*, ventanas de cancelación, hitboxes, daño base, aturdimiento, retroceso (knockback), secuencias de combo y tabla de multiplicadores de daño. |
+
+Vite los publica tal cual en `dist/config/` y `static/config/`, así que se pueden
+retocar **sin recompilar** el juego.
+
+### Módulos del motor — `src/engine/`
+
+| Módulo | Responsabilidad |
+| --- | --- |
+| `ConfigLoader.js` | Carga asíncrona y cacheada de los JSON vía `fetch()`, con respaldo empaquetado y recarga en caliente (`invalidateConfigCache`). |
+| `InputManager.js` | Traduce teclado / ratón / gamepad en acciones abstractas. API por frame (`isDown`, `wasPressed`, `axis`), búfer de entradas para combos, entradas virtuales del HUD táctil y *rebinding* persistente. |
+| `PlayerController.js` | Física de la furgoneta y del guardián a pie + máquina de estados de combos, consumiendo `player_stats.json` y `moveset.json`. Agnóstico del renderizador. |
+| `GameLoop.js` | Bucle principal con paso fijo que orquesta `InputManager` + `PlayerController` y delega el dibujado. |
+| `defaults.js` | Copias empaquetadas de los mismos JSON, usadas sólo como respaldo sin red (tests, jsdom). |
+
+### Ejemplo de integración
+
+```js
+import { GameLoop } from './src/engine/GameLoop.js';
+
+const loop = await GameLoop.create({
+  terrain,                 // { getHeight(x, z, zoneId) }
+  zoneId: 'platja',
+  getTargets: () => fauna.getHittableAnimals(),
+  onAction: (action) => {
+    if (action === 'TOGGLE_SIREN') van.toggleSiren();
+    if (action === 'HONK') van.honk();
+    if (action === 'INTERACT') interactWithNearestTarget();
+  },
+  onUpdate: (dt, { state }) => {
+    van.group.position.set(state.position.x, state.position.y, state.position.z);
+    van.group.rotation.set(-state.pitch, state.heading, -state.roll, 'YXZ');
+  },
+  onRender: () => renderer.render(scene, camera),
+});
+
+loop.start();
+```
+
+Cambiar el salto a otra tecla, subir la velocidad máxima o reequilibrar un combo
+sólo requiere editar el JSON correspondiente.
+
+### Pruebas
+
+```bash
+npm run test:engine     # InputManager + PlayerController contra los JSON reales
+npm run test:movement   # movimiento real: conducir, bajarse, caminar y volver a subir
+npm test                # ambas suites del motor
+npm run build && npm run test:ui      # controles del HUD sobre el bundle montado
+npm run build && npm run test:smoke   # recorrido end-to-end en jsdom
+```
+
+### Controles
+
+| Tecla | Acción |
+| --- | --- |
+| `W` / `↑` | Acelerar / avanzar |
+| `S` / `↓` | Frenar / marcha atrás |
+| `A` `D` / `←` `→` | Girar |
+| `Espacio` | Freno de mano / esprintar a pie |
+| `F` | Bajar de la furgoneta / volver a subir |
+| `E` / `Enter` | Interactuar con animales, vecinos y pistas |
+| `V` | Cambiar cámara (3ª persona / cabina / cenital) |
+| `B` · `L` · `H` | Sirena · faros · claxon |
+
+Todas se pueden reasignar en `public/config/keybindings.json`, y también
+responden mando y los controles táctiles del HUD.

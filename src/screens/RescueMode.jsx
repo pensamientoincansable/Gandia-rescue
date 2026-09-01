@@ -50,6 +50,7 @@ export default function RescueMode({
   const [virtualInput, setVirtualInput] = useState({});
 
   const captureFnRef = useRef(null);
+  const honkRef = useRef(null);
 
   const zone = zoneById(hasGps && gpsZone ? gpsZone : manualZone);
   const zoneName = t(`z${zone.id[0].toUpperCase()}${zone.id.slice(1)}`);
@@ -223,6 +224,11 @@ export default function RescueMode({
         isFootMode={isFootMode}
         sirenActive={sirenActive}
         headlightsActive={headlightsActive}
+        onToggleFootMode={() => setIsFootMode((v) => !v)}
+        onCycleCamera={toggleCameraMode}
+        onHonkReady={(fn) => { honkRef.current = fn; }}
+        onToggleSiren={() => setSirenActive((v) => !v)}
+        onToggleHeadlights={() => setHeadlightsActive((v) => !v)}
       />
 
       {/* Capa de compatibilidad para tests */}
@@ -343,14 +349,14 @@ export default function RescueMode({
       <VanControlsHUD
         speedKmh={speedKmh}
         sirenActive={sirenActive}
-        onToggleSiren={() => setSirenActive(!sirenActive)}
+        onToggleSiren={() => setSirenActive((v) => !v)}
         headlightsActive={headlightsActive}
-        onToggleHeadlights={() => setHeadlightsActive(!headlightsActive)}
+        onToggleHeadlights={() => setHeadlightsActive((v) => !v)}
         cameraMode={cameraMode}
         onChangeCamera={toggleCameraMode}
         isFootMode={isFootMode}
-        onToggleFootMode={() => setIsFootMode(!isFootMode)}
-        onHonk={() => {}}
+        onToggleFootMode={() => setIsFootMode((v) => !v)}
+        onHonk={() => honkRef.current?.()}
         isMobile={isMobile}
         onVirtualInput={(inp) => setVirtualInput((prev) => ({ ...prev, ...inp }))}
         t={t}

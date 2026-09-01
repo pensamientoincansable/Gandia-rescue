@@ -1,0 +1,89 @@
+{
+  "version": 1,
+  "description": "Sistema de acciones/combos del guardián. Los tiempos se expresan en frames a la tasa de referencia 'frameRate' y el motor los convierte a segundos.",
+  "frameRate": 60,
+  "global": {
+    "inputBufferFrames": 8,
+    "comboResetFrames": 26,
+    "hitstopFrames": 4,
+    "knockbackDecay": 9.5
+  },
+  "moves": {
+    "NET_JAB": {
+      "label": "Red rápida",
+      "input": "ATTACK_LIGHT",
+      "startupFrames": 5,
+      "activeFrames": 4,
+      "recoveryFrames": 9,
+      "cancelWindow": { "startFrame": 7, "endFrame": 16 },
+      "cancelInto": ["NET_SWEEP", "CAGE_SLAM", "DASH"],
+      "hitbox": { "offset": [0, 1.1, 1.2], "radius": 1.1 },
+      "damage": 8,
+      "stunFrames": 10,
+      "knockback": { "force": 3.2, "angleDeg": 12 },
+      "staminaCost": 6
+    },
+    "NET_SWEEP": {
+      "label": "Barrido de red",
+      "input": "ATTACK_LIGHT",
+      "requiresPrevious": "NET_JAB",
+      "startupFrames": 7,
+      "activeFrames": 6,
+      "recoveryFrames": 12,
+      "cancelWindow": { "startFrame": 10, "endFrame": 20 },
+      "cancelInto": ["CAGE_SLAM", "DASH"],
+      "hitbox": { "offset": [0, 0.9, 1.5], "radius": 1.5 },
+      "damage": 12,
+      "stunFrames": 14,
+      "knockback": { "force": 5.0, "angleDeg": 20 },
+      "staminaCost": 9
+    },
+    "CAGE_SLAM": {
+      "label": "Transportín al suelo",
+      "input": "ATTACK_HEAVY",
+      "startupFrames": 13,
+      "activeFrames": 5,
+      "recoveryFrames": 20,
+      "cancelWindow": { "startFrame": 18, "endFrame": 26 },
+      "cancelInto": ["DASH"],
+      "hitbox": { "offset": [0, 0.6, 1.4], "radius": 1.8 },
+      "damage": 22,
+      "stunFrames": 24,
+      "knockback": { "force": 8.5, "angleDeg": 35 },
+      "staminaCost": 18
+    },
+    "DASH": {
+      "label": "Esquiva rodada",
+      "input": "DASH",
+      "startupFrames": 2,
+      "activeFrames": 10,
+      "recoveryFrames": 6,
+      "invulnerableFrames": { "startFrame": 2, "endFrame": 10 },
+      "cancelWindow": { "startFrame": 12, "endFrame": 18 },
+      "cancelInto": ["NET_JAB", "CAGE_SLAM"],
+      "damage": 0,
+      "knockback": { "force": 0, "angleDeg": 0 },
+      "staminaCost": 22
+    }
+  },
+  "combos": [
+    {
+      "id": "RESCUE_BASIC",
+      "label": "Combo de captura básico",
+      "sequence": ["NET_JAB", "NET_SWEEP", "CAGE_SLAM"],
+      "finisherBonusDamage": 6,
+      "finisherKnockbackMultiplier": 1.4
+    },
+    {
+      "id": "EVASIVE_CATCH",
+      "label": "Esquiva y captura",
+      "sequence": ["DASH", "NET_JAB", "CAGE_SLAM"],
+      "finisherBonusDamage": 4,
+      "finisherKnockbackMultiplier": 1.2
+    }
+  ],
+  "damageTable": {
+    "multipliersByTargetSize": { "small": 1.4, "medium": 1.0, "large": 0.65 },
+    "multipliersByState": { "idle": 1.0, "fleeing": 1.25, "stunned": 1.6, "aggressive": 0.85 }
+  }
+}

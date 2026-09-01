@@ -8,6 +8,22 @@ import { NPCs3D } from './NPCs3D.js';
 import { Clues3D } from './Clues3D.js';
 import { Atmosphere3D } from './Atmosphere3D.js';
 import { CASES } from '../lib/game.js';
+import { InputManager } from '../engine/InputManager.js';
+import { DEFAULT_KEYBINDINGS, DEFAULT_PLAYER_STATS } from '../engine/defaults.js';
+import { loadConfig } from '../engine/ConfigLoader.js';
+
+/**
+ * Traducción de acciones abstractas (keybindings.json) al vocabulario de
+ * entrada que consume la física de la furgoneta. Cambiar una tecla ya no
+ * requiere tocar este archivo: basta con editar `config/keybindings.json`.
+ */
+const ACTION_TO_DRIVE_INPUT = {
+  MOVE_FORWARD: 'forward',
+  MOVE_BACKWARD: 'backward',
+  STEER_LEFT: 'left',
+  STEER_RIGHT: 'right',
+  HANDBRAKE: 'handbrake',
+};
 
 /**
  * Escenario 3D interactivo en Three.js para la exploración y rescate en Gandía.
@@ -31,6 +47,11 @@ export default function GandiaWorld3D({
   isFootMode = false,
   sirenActive = false,
   headlightsActive = true,
+  onToggleFootMode,
+  onCycleCamera,
+  onToggleSiren,
+  onToggleHeadlights,
+  onHonkReady,
 }) {
   const containerRef = useRef(null);
   const canvasRef = useRef(null);
@@ -54,6 +75,17 @@ export default function GandiaWorld3D({
     right: false,
     handbrake: false,
   });
+  const inputManagerRef = useRef(null);
+  const statsRef = useRef(DEFAULT_PLAYER_STATS);
+  const triggerContextInteractionRef = useRef(() => {});
+  // Las acciones puntuales se delegan al estado de React (dueño de la UI).
+  const actionHandlersRef = useRef({});
+  actionHandlersRef.current = {
+    TOGGLE_FOOT_MODE: onToggleFootMode,
+    CYCLE_CAMERA: onCycleCamera,
+    TOGGLE_SIREN: onToggleSiren,
+    TOGGLE_HEADLIGHTS: onToggleHeadlights,
+  };
 
   const [nearbyTarget, setNearbyTarget] = useState(null); // { type: 'animal'|'npc'|'clue', data }
 
@@ -87,7 +119,8 @@ export default function GandiaWorld3D({
 
     const width = container.clientWidth || 800;
     const height = container.clientHeight || 600;
-    const camera = new THREE.PerspectiveCamera(65, width / Math.max(1, height), 0.2, 800);
+    const camCfg = statsRef.current.camera;
+    const camera = new THREE.PerspectiveCamera(camCfg.fov, width / Math.max(1, height), camCfg.near, camCfg.far);
     cameraRef.current = camera;
 
     // 2. Renderizador WebGL seguro
@@ -123,8 +156,9 @@ export default function GandiaWorld3D({
     const instanced = new InstancedElements(scene, terrain);
     instancedRef.current = instanced;
 
-    const van = new RescueVan(scene, terrain);
+    const van = new RescueVan(scene, terrain, statsRef.current);
     vanRef.current = van;
+    onHonkReady?.(() => van.honk());
 
     const fauna = new Fauna3D(scene, terrain);
     faunaRef.current = fauna;
@@ -163,7 +197,7 @@ export default function GandiaWorld3D({
       if (!running) return;
       raf = safeRequestAnim(animate);
 
-      const delta = Math.min(0.06, (now - lastT) / 1000);
+      const delta = Math.min(statsRef.current.world.maxDeltaSeconds, (now - lastT) / 1000);
       const time = now * 0.001;
       lastT = now;
 
@@ -185,9 +219,10 @@ export default function GandiaWorld3D({
       atmosphere.update(delta, time);
 
       const playerPos = van.getActivePosition();
-      const nearAnimal = fauna.getNearestAnimal(playerPos, 8);
-      const nearNpc = npcs.getNearbyNpc(playerPos, 7);
-      const nearClue = clues.getNearbyClue(playerPos, 6);
+      const interaction = statsRef.current.interaction;
+      const nearAnimal = fauna.getNearestAnimal(playerPos, interaction.animalRadius);
+      const nearNpc = npcs.getNearbyNpc(playerPos, interaction.npcRadius);
+      const nearClue = clues.getNearbyClue(playerPos, interaction.clueRadius);
 
       if (nearAnimal) {
         setNearbyTarget({ type: 'animal', data: nearAnimal });
@@ -199,7 +234,7 @@ export default function GandiaWorld3D({
         setNearbyTarget(null);
       }
 
-      if (now - lookEmitTimer > 120 && onLookUpdate) {
+      if (now - lookEmitTimer > statsRef.current.interaction.hudEmitIntervalMs && onLookUpdate) {
         lookEmitTimer = now;
         const headingDeg = ((van.heading * 180) / Math.PI + 360) % 360;
         onLookUpdate({
@@ -242,17 +277,11 @@ export default function GandiaWorld3D({
     instancedRef.current.buildForZone(newZoneId);
     atmosphereRef.current.setZoneAtmosphere(newZoneId);
 
-    let startX = -15;
-    let startZ = -70;
-    let startHeading = 0;
+    // Los puntos de aparición se definen en player_stats.json → world.spawnPoints
+    const worldCfg = statsRef.current.world;
+    const spawn = worldCfg.spawnPoints?.[newZoneId] ?? worldCfg.defaultSpawn ?? { x: -15, z: -70, heading: 0 };
 
-    if (newZoneId === 'port') { startX = -10; startZ = -60; }
-    else if (newZoneId === 'marjal') { startX = -20; startZ = -60; }
-    else if (newZoneId === 'riu') { startX = -35; startZ = -60; }
-    else if (newZoneId === 'casc') { startX = 0; startZ = -50; }
-    else if (newZoneId === 'montduver') { startX = -70; startZ = -70; }
-
-    vanRef.current.setPosition(startX, startZ, startHeading, newZoneId);
+    vanRef.current.setPosition(spawn.x, spawn.z, spawn.heading ?? 0, newZoneId);
 
     faunaRef.current.buildForZone(newZoneId, cases, doneCases);
     npcsRef.current.buildForZone(newZoneId);
@@ -273,40 +302,63 @@ export default function GandiaWorld3D({
     }
   }, [cameraMode, isFootMode, sirenActive, headlightsActive]);
 
-  /* ------------------------------------------------ Control por Teclado */
+  /* ------------------------------- Entrada desacoplada (InputManager) */
   useEffect(() => {
-    const onKeyDown = (e) => {
-      if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+    // Envoltorios seguros: en entornos sin navegador (jsdom, SSR) no existe rAF.
+    const reqFrame = (fn) => (typeof window !== 'undefined' && window.requestAnimationFrame
+      ? window.requestAnimationFrame(fn)
+      : setTimeout(fn, 16));
+    const cancelFrame = (id) => (typeof window !== 'undefined' && window.cancelAnimationFrame
+      ? window.cancelAnimationFrame(id)
+      : clearTimeout(id));
 
-      const key = e.key.toLowerCase();
-      if (key === 'w' || key === 'arrowup') inputRef.current.forward = true;
-      else if (key === 's' || key === 'arrowdown') inputRef.current.backward = true;
-      else if (key === 'a' || key === 'arrowleft') inputRef.current.left = true;
-      else if (key === 'd' || key === 'arrowright') inputRef.current.right = true;
-      else if (key === ' ') inputRef.current.handbrake = true;
-      else if (key === 'e' || key === 'enter') {
-        triggerContextInteraction();
-      } else if (key === 'h') {
-        vanRef.current?.honk();
-      }
-    };
+    let disposed = false;
+    let manager = null;
+    let raf = 0;
 
-    const onKeyUp = (e) => {
-      const key = e.key.toLowerCase();
-      if (key === 'w' || key === 'arrowup') inputRef.current.forward = false;
-      else if (key === 's' || key === 'arrowdown') inputRef.current.backward = false;
-      else if (key === 'a' || key === 'arrowleft') inputRef.current.left = false;
-      else if (key === 'd' || key === 'arrowright') inputRef.current.right = false;
-      else if (key === ' ') inputRef.current.handbrake = false;
-    };
+    (async () => {
+      // Carga asíncrona de los parámetros de jugabilidad (no bloquea el render)
+      try {
+        const stats = await loadConfig('player_stats.json', DEFAULT_PLAYER_STATS);
+        if (!disposed) statsRef.current = stats;
+      } catch (e) { /* respaldo empaquetado */ }
 
-    window.addEventListener('keydown', onKeyDown);
-    window.addEventListener('keyup', onKeyUp);
+      manager = await InputManager.create({ fallback: DEFAULT_KEYBINDINGS });
+      if (disposed) { manager.dispose(); return; }
+      manager.loadUserOverrides();
+      inputManagerRef.current = manager;
+
+      // Sondeo por frame: acciones sostenidas → estado de conducción,
+      // acciones puntuales → callbacks del juego.
+      const poll = () => {
+        if (disposed) return;
+        raf = reqFrame(poll);
+        manager.beginFrame();
+
+        for (const [action, key] of Object.entries(ACTION_TO_DRIVE_INPUT)) {
+          inputRef.current[key] = manager.isDown(action);
+        }
+        if (manager.wasPressed('INTERACT')) triggerContextInteractionRef.current();
+        if (manager.wasPressed('HONK')) vanRef.current?.honk();
+
+        // Sirena, faros, cámara y entrar/salir del vehículo son propiedad del
+        // estado de React: se notifican hacia arriba en vez de mutar la escena.
+        for (const action of ['TOGGLE_SIREN', 'TOGGLE_HEADLIGHTS', 'CYCLE_CAMERA', 'TOGGLE_FOOT_MODE']) {
+          if (manager.wasPressed(action)) actionHandlersRef.current[action]?.();
+        }
+
+        manager.endFrame();
+      };
+      raf = reqFrame(poll);
+    })();
+
     return () => {
-      window.removeEventListener('keydown', onKeyDown);
-      window.removeEventListener('keyup', onKeyUp);
+      disposed = true;
+      cancelFrame(raf);
+      manager?.dispose();
+      inputManagerRef.current = null;
     };
-  });
+  }, []);
 
   const triggerContextInteraction = () => {
     if (!nearbyTarget) return;
@@ -318,6 +370,8 @@ export default function GandiaWorld3D({
       onInspectClue(nearbyTarget.data);
     }
   };
+
+  triggerContextInteractionRef.current = triggerContextInteraction;
 
   return (
     <div className="gandia-3d-wrapper" ref={containerRef} style={{ width: '100%', height: '100%', position: 'absolute', inset: 0, overflow: 'hidden' }}>

@@ -1,0 +1,91 @@
+{
+  "version": 1,
+  "description": "Parámetros de jugabilidad y física. Todos los valores están en unidades SI (metros, segundos, radianes) salvo indicación contraria.",
+  "vitals": {
+    "maxHealth": 100,
+    "startHealth": 100,
+    "maxStamina": 100,
+    "staminaRegenPerSecond": 14,
+    "dashStaminaCost": 22,
+    "invulnerabilitySeconds": 0.6
+  },
+  "vehicle": {
+    "maxSpeed": 24,
+    "reverseSpeedFactor": 0.45,
+    "acceleration": 16,
+    "reverseAccelerationFactor": 0.6,
+    "brakeForce": 28,
+    "handbrakeMultiplier": 2,
+    "friction": 4.5,
+    "maxSteer": 0.55,
+    "steerLerpSpeed": 9,
+    "turnSpeedReference": 14,
+    "turnRateMultiplier": 2.2,
+    "brakeThresholdSpeed": 0.5,
+    "minSpeedToTurn": 0.05,
+    "wheelRadius": 0.48,
+    "suspensionLerpSpeed": 12,
+    "pitchSampleDistance": 2.2,
+    "rollSampleDistance": 1.2,
+    "boostMultiplier": 1.35
+  },
+  "ranger": {
+    "walkSpeed": 4.5,
+    "sprintSpeed": 8,
+    "turnSpeed": 2.8,
+    "acceleration": 22,
+    "friction": 12,
+    "jumpForce": 6.2,
+    "gravity": -18.5,
+    "maxFallSpeed": -32,
+    "dashSpeed": 14,
+    "dashDurationSeconds": 0.18,
+    "dashCooldownSeconds": 0.9,
+    "eyeHeight": 1.2
+  },
+  "world": {
+    "boundsMin": -115,
+    "boundsMax": 115,
+    "maxDeltaSeconds": 0.06,
+    "defaultSpawn": { "x": -15, "z": -70, "heading": 0 },
+    "spawnPoints": {
+      "platja": { "x": -15, "z": -70, "heading": 0 },
+      "port": { "x": -10, "z": -60, "heading": 0 },
+      "marjal": { "x": -20, "z": -60, "heading": 0 },
+      "riu": { "x": -35, "z": -60, "heading": 0 },
+      "casc": { "x": 0, "z": -50, "heading": 0 },
+      "montduver": { "x": -70, "z": -70, "heading": 0 }
+    }
+  },
+  "camera": {
+    "fov": 65,
+    "near": 0.2,
+    "far": 800,
+    "modes": ["chase", "hood", "top"],
+    "chase": { "distance": 9.5, "height": 3.6, "lerpSpeed": 6, "lookAtHeight": 1.4 },
+    "hood": { "offset": [0, 1.8, 1.6], "lookOffset": [0, 1.6, 20] },
+    "top": { "height": 32, "lerpSpeed": 6 },
+    "foot": { "distance": 4.5, "height": 2.2, "lerpSpeed": 10, "lookAtHeight": 1.2 }
+  },
+  "interaction": {
+    "animalRadius": 8,
+    "npcRadius": 7,
+    "clueRadius": 6,
+    "hudEmitIntervalMs": 120
+  },
+  "progression": {
+    "xpPerRescue": 60,
+    "proximityBonusMeters": 40,
+    "proximityBonusMultiplier": 1.5,
+    "noGpsMultiplier": 0.4,
+    "exploreModeMultiplier": 0
+  },
+  "audio": {
+    "engineBaseFrequency": 45,
+    "engineFrequencyPerSpeed": 9,
+    "hornFrequencies": [420, 525],
+    "hornGain": 0.12,
+    "hornDecaySeconds": 0.35,
+    "sirenFlashHz": 16
+  }
+}
