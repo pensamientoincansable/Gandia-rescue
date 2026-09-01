@@ -10,7 +10,10 @@
     "preview": "vite preview",
     "check:pano": "node scripts/pano-check.mjs static && node scripts/pano-check.mjs dist",
     "test:engine": "node scripts/engine-test.mjs",
-    "test:smoke": "node scripts/smoke.mjs"
+    "test:smoke": "node scripts/smoke.mjs",
+    "test:movement": "node scripts/movement-test.mjs",
+    "test:ui": "node scripts/ui-controls-test.mjs",
+    "test": "node scripts/engine-test.mjs && node scripts/movement-test.mjs"
   },
   "dependencies": {
     "@vitejs/plugin-react": "latest",

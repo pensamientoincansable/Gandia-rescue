@@ -336,6 +336,11 @@ export class RescueVan {
     this.steerAngle = 0;
     this.group.position.copy(this.position);
     this.group.rotation.y = this.heading;
+
+    // El guardián acompaña a la furgoneta al cambiar de zona, de modo que al
+    // bajarse a pie aparece junto al vehículo y no en el origen del mundo.
+    this.rangerPosition.copy(this.position);
+    this.rangerHeading = heading;
   }
 
   /** Actualización de la física de conducción por fotograma */

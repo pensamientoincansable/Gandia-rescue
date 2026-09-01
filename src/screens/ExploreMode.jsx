@@ -46,6 +46,7 @@ export default function ExploreMode({
   const [virtualInput, setVirtualInput] = useState({});
 
   const captureFnRef = useRef(null);
+  const honkRef = useRef(null);
 
   const zone = zoneById(zoneId);
   const zoneName = t(`z${zone.id[0].toUpperCase()}${zone.id.slice(1)}`);
@@ -179,6 +180,11 @@ export default function ExploreMode({
         isFootMode={isFootMode}
         sirenActive={sirenActive}
         headlightsActive={headlightsActive}
+        onToggleFootMode={() => setIsFootMode((v) => !v)}
+        onCycleCamera={toggleCameraMode}
+        onHonkReady={(fn) => { honkRef.current = fn; }}
+        onToggleSiren={() => setSirenActive((v) => !v)}
+        onToggleHeadlights={() => setHeadlightsActive((v) => !v)}
       />
 
       {/* Visor 360° invisible o en capa de compatibilidad */}
@@ -260,14 +266,14 @@ export default function ExploreMode({
       <VanControlsHUD
         speedKmh={speedKmh}
         sirenActive={sirenActive}
-        onToggleSiren={() => setSirenActive(!sirenActive)}
+        onToggleSiren={() => setSirenActive((v) => !v)}
         headlightsActive={headlightsActive}
-        onToggleHeadlights={() => setHeadlightsActive(!headlightsActive)}
+        onToggleHeadlights={() => setHeadlightsActive((v) => !v)}
         cameraMode={cameraMode}
         onChangeCamera={toggleCameraMode}
         isFootMode={isFootMode}
-        onToggleFootMode={() => setIsFootMode(!isFootMode)}
-        onHonk={() => {}}
+        onToggleFootMode={() => setIsFootMode((v) => !v)}
+        onHonk={() => honkRef.current?.()}
         isMobile={isMobile}
         onVirtualInput={(inp) => setVirtualInput((prev) => ({ ...prev, ...inp }))}
         t={t}

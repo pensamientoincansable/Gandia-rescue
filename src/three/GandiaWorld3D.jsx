@@ -47,6 +47,11 @@ export default function GandiaWorld3D({
   isFootMode = false,
   sirenActive = false,
   headlightsActive = true,
+  onToggleFootMode,
+  onCycleCamera,
+  onToggleSiren,
+  onToggleHeadlights,
+  onHonkReady,
 }) {
   const containerRef = useRef(null);
   const canvasRef = useRef(null);
@@ -73,6 +78,14 @@ export default function GandiaWorld3D({
   const inputManagerRef = useRef(null);
   const statsRef = useRef(DEFAULT_PLAYER_STATS);
   const triggerContextInteractionRef = useRef(() => {});
+  // Las acciones puntuales se delegan al estado de React (dueño de la UI).
+  const actionHandlersRef = useRef({});
+  actionHandlersRef.current = {
+    TOGGLE_FOOT_MODE: onToggleFootMode,
+    CYCLE_CAMERA: onCycleCamera,
+    TOGGLE_SIREN: onToggleSiren,
+    TOGGLE_HEADLIGHTS: onToggleHeadlights,
+  };
 
   const [nearbyTarget, setNearbyTarget] = useState(null); // { type: 'animal'|'npc'|'clue', data }
 
@@ -145,6 +158,7 @@ export default function GandiaWorld3D({
 
     const van = new RescueVan(scene, terrain, statsRef.current);
     vanRef.current = van;
+    onHonkReady?.(() => van.honk());
 
     const fauna = new Fauna3D(scene, terrain);
     faunaRef.current = fauna;
@@ -326,8 +340,12 @@ export default function GandiaWorld3D({
         }
         if (manager.wasPressed('INTERACT')) triggerContextInteractionRef.current();
         if (manager.wasPressed('HONK')) vanRef.current?.honk();
-        if (manager.wasPressed('TOGGLE_SIREN')) vanRef.current?.toggleSiren();
-        if (manager.wasPressed('TOGGLE_HEADLIGHTS')) vanRef.current?.toggleHeadlights();
+
+        // Sirena, faros, cámara y entrar/salir del vehículo son propiedad del
+        // estado de React: se notifican hacia arriba en vez de mutar la escena.
+        for (const action of ['TOGGLE_SIREN', 'TOGGLE_HEADLIGHTS', 'CYCLE_CAMERA', 'TOGGLE_FOOT_MODE']) {
+          if (manager.wasPressed(action)) actionHandlersRef.current[action]?.();
+        }
 
         manager.endFrame();
       };

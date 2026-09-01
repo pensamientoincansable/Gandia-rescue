@@ -139,6 +139,25 @@ sólo requiere editar el JSON correspondiente.
 ### Pruebas
 
 ```bash
-npm run test:engine   # InputManager + PlayerController contra los JSON reales
+npm run test:engine     # InputManager + PlayerController contra los JSON reales
+npm run test:movement   # movimiento real: conducir, bajarse, caminar y volver a subir
+npm test                # ambas suites del motor
+npm run build && npm run test:ui      # controles del HUD sobre el bundle montado
 npm run build && npm run test:smoke   # recorrido end-to-end en jsdom
 ```
+
+### Controles
+
+| Tecla | Acción |
+| --- | --- |
+| `W` / `↑` | Acelerar / avanzar |
+| `S` / `↓` | Frenar / marcha atrás |
+| `A` `D` / `←` `→` | Girar |
+| `Espacio` | Freno de mano / esprintar a pie |
+| `F` | Bajar de la furgoneta / volver a subir |
+| `E` / `Enter` | Interactuar con animales, vecinos y pistas |
+| `V` | Cambiar cámara (3ª persona / cabina / cenital) |
+| `B` · `L` · `H` | Sirena · faros · claxon |
+
+Todas se pueden reasignar en `public/config/keybindings.json`, y también
+responden mando y los controles táctiles del HUD.

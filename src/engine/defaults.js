@@ -4,9 +4,9 @@
  * fichero servido no se puede leer. La fuente editable sigue siendo
  * `public/config/*.json`: estos imports apuntan al mismo fichero.
  */
-import keybindings from '../../public/config/keybindings.json';
-import playerStats from '../../public/config/player_stats.json';
-import moveset from '../../public/config/moveset.json';
+import keybindings from '../../public/config/keybindings.json' with { type: 'json' };
+import playerStats from '../../public/config/player_stats.json' with { type: 'json' };
+import moveset from '../../public/config/moveset.json' with { type: 'json' };
 
 export const DEFAULT_KEYBINDINGS = keybindings;
 export const DEFAULT_PLAYER_STATS = playerStats;
