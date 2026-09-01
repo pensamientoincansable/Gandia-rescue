@@ -1,0 +1,113 @@
+{
+  "$schema": "./keybindings.schema.md",
+  "version": 1,
+  "description": "Mapeo de entradas físicas (teclado, ratón, gamepad) a acciones abstractas del juego. Edítalo sin tocar el código: InputManager lo carga por fetch().",
+  "settings": {
+    "ignoreWhenTypingIn": ["INPUT", "TEXTAREA", "SELECT"],
+    "gamepadDeadzone": 0.22,
+    "gamepadAxisThreshold": 0.5,
+    "mouseSensitivity": 0.0022,
+    "invertLookY": false
+  },
+  "actions": {
+    "MOVE_FORWARD": {
+      "label": "Acelerar / Avanzar",
+      "type": "hold",
+      "keyboard": ["KeyW", "ArrowUp"],
+      "gamepad": { "buttons": [12], "axes": [{ "index": 1, "direction": -1 }], "triggers": [7] }
+    },
+    "MOVE_BACKWARD": {
+      "label": "Frenar / Marcha atrás",
+      "type": "hold",
+      "keyboard": ["KeyS", "ArrowDown"],
+      "gamepad": { "buttons": [13], "axes": [{ "index": 1, "direction": 1 }], "triggers": [6] }
+    },
+    "STEER_LEFT": {
+      "label": "Girar a la izquierda",
+      "type": "hold",
+      "keyboard": ["KeyA", "ArrowLeft"],
+      "gamepad": { "buttons": [14], "axes": [{ "index": 0, "direction": -1 }] }
+    },
+    "STEER_RIGHT": {
+      "label": "Girar a la derecha",
+      "type": "hold",
+      "keyboard": ["KeyD", "ArrowRight"],
+      "gamepad": { "buttons": [15], "axes": [{ "index": 0, "direction": 1 }] }
+    },
+    "HANDBRAKE": {
+      "label": "Freno de mano / Esprintar a pie",
+      "type": "hold",
+      "keyboard": ["Space", "ShiftLeft"],
+      "gamepad": { "buttons": [1] }
+    },
+    "DASH": {
+      "label": "Impulso rápido",
+      "type": "press",
+      "keyboard": ["ShiftRight"],
+      "mouse": ["middle"],
+      "gamepad": { "buttons": [10] }
+    },
+    "JUMP": {
+      "label": "Saltar (modo a pie)",
+      "type": "press",
+      "keyboard": ["Space"],
+      "gamepad": { "buttons": [0] }
+    },
+    "INTERACT": {
+      "label": "Interactuar / Atender aviso",
+      "type": "press",
+      "keyboard": ["KeyE", "Enter"],
+      "gamepad": { "buttons": [2] }
+    },
+    "ATTACK_LIGHT": {
+      "label": "Acción rápida (red de rescate)",
+      "type": "press",
+      "mouse": ["left"],
+      "keyboard": ["KeyJ"],
+      "gamepad": { "buttons": [3] }
+    },
+    "ATTACK_HEAVY": {
+      "label": "Acción cargada (jaula transportín)",
+      "type": "press",
+      "mouse": ["right"],
+      "keyboard": ["KeyK"],
+      "gamepad": { "buttons": [5] }
+    },
+    "TOGGLE_SIREN": {
+      "label": "Sirena de emergencia",
+      "type": "press",
+      "keyboard": ["KeyB"],
+      "gamepad": { "buttons": [4] }
+    },
+    "TOGGLE_HEADLIGHTS": {
+      "label": "Faros de largo alcance",
+      "type": "press",
+      "keyboard": ["KeyL"],
+      "gamepad": { "buttons": [8] }
+    },
+    "HONK": {
+      "label": "Claxon",
+      "type": "press",
+      "keyboard": ["KeyH"],
+      "gamepad": { "buttons": [11] }
+    },
+    "CYCLE_CAMERA": {
+      "label": "Cambiar cámara",
+      "type": "press",
+      "keyboard": ["KeyV"],
+      "gamepad": { "buttons": [9] }
+    },
+    "TOGGLE_FOOT_MODE": {
+      "label": "Entrar / salir de la furgoneta",
+      "type": "press",
+      "keyboard": ["KeyF"],
+      "gamepad": { "buttons": [3] }
+    },
+    "PHOTO_MODE": {
+      "label": "Modo fotografía",
+      "type": "press",
+      "keyboard": ["KeyP"],
+      "gamepad": { "buttons": [16] }
+    }
+  }
+}

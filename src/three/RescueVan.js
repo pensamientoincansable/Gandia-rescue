@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { createRescueVanDecal } from './TextureFactory.js';
+import { DEFAULT_PLAYER_STATS } from '../engine/defaults.js';
 
 /**
  * Furgoneta 3D de Rescate y Conservación de Gandía.
@@ -14,9 +15,21 @@ import { createRescueVanDecal } from './TextureFactory.js';
  */
 
 export class RescueVan {
-  constructor(scene, terrainBuilder) {
+  /**
+   * @param {THREE.Scene} scene
+   * @param {object} terrainBuilder
+   * @param {object} [stats] Configuración de `player_stats.json` (inyectada).
+   *   Si no se pasa, se usa la copia empaquetada como respaldo.
+   */
+  constructor(scene, terrainBuilder, stats = DEFAULT_PLAYER_STATS) {
     this.scene = scene;
     this.terrain = terrainBuilder;
+    this.stats = stats;
+    this.cfg = stats.vehicle;
+    this.rangerCfg = stats.ranger;
+    this.worldCfg = stats.world;
+    this.cameraCfg = stats.camera;
+    this.audioCfg = stats.audio;
 
     this.group = new THREE.Group();
     this.scene.add(this.group);
@@ -26,16 +39,17 @@ export class RescueVan {
     this.heading = 0; // Ángulo de rotación Y en radianes
     this.speed = 0;   // Velocidad lineal actual
     this.steerAngle = 0; // Ángulo de giro de ruedas
-    this.maxSpeed = 24; // Velocidad máxima m/s
-    this.accel = 16;
-    this.brakeForce = 28;
-    this.friction = 4.5;
-    this.maxSteer = 0.55;
+    // Parámetros de física leídos de player_stats.json (sin valores fijos)
+    this.maxSpeed = this.cfg.maxSpeed;
+    this.accel = this.cfg.acceleration;
+    this.brakeForce = this.cfg.brakeForce;
+    this.friction = this.cfg.friction;
+    this.maxSteer = this.cfg.maxSteer;
 
     // Estado de equipamiento
     this.sirenActive = false;
     this.headlightsActive = true;
-    this.cameraMode = 'chase'; // 'chase' | 'hood' | 'top' | 'foot'
+    this.cameraMode = this.cameraCfg.modes?.[0] ?? 'chase'; // 'chase' | 'hood' | 'top' | 'foot'
     this.isFootMode = false;
     this.rangerPosition = new THREE.Vector3(0, 0, 0);
     this.rangerHeading = 0;
@@ -269,10 +283,12 @@ export class RescueVan {
       const osc2 = this.audioCtx.createOscillator();
       const gain = this.audioCtx.createGain();
 
-      osc1.frequency.setValueAtTime(420, this.audioCtx.currentTime);
-      osc2.frequency.setValueAtTime(525, this.audioCtx.currentTime);
-      gain.gain.setValueAtTime(0.12, this.audioCtx.currentTime);
-      gain.gain.exponentialRampToValueAtTime(0.001, this.audioCtx.currentTime + 0.35);
+      const [f1, f2] = this.audioCfg.hornFrequencies;
+      const decay = this.audioCfg.hornDecaySeconds;
+      osc1.frequency.setValueAtTime(f1, this.audioCtx.currentTime);
+      osc2.frequency.setValueAtTime(f2, this.audioCtx.currentTime);
+      gain.gain.setValueAtTime(this.audioCfg.hornGain, this.audioCtx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, this.audioCtx.currentTime + decay);
 
       osc1.connect(gain);
       osc2.connect(gain);
@@ -280,8 +296,8 @@ export class RescueVan {
 
       osc1.start();
       osc2.start();
-      osc1.stop(this.audioCtx.currentTime + 0.36);
-      osc2.stop(this.audioCtx.currentTime + 0.36);
+      osc1.stop(this.audioCtx.currentTime + this.audioCfg.hornDecaySeconds + 0.01);
+      osc2.stop(this.audioCtx.currentTime + this.audioCfg.hornDecaySeconds + 0.01);
     } catch (e) {
       /* noop */
     }
@@ -344,12 +360,15 @@ export class RescueVan {
     if (throttle > 0) {
       this.speed = Math.min(this.maxSpeed, this.speed + this.accel * delta);
     } else if (throttle < 0) {
-      if (this.speed > 0.5) {
+      if (this.speed > this.cfg.brakeThresholdSpeed) {
         // Frenar
         this.speed = Math.max(0, this.speed - this.brakeForce * delta);
       } else {
         // Marcha atrás
-        this.speed = Math.max(-this.maxSpeed * 0.45, this.speed - (this.accel * 0.6) * delta);
+        this.speed = Math.max(
+          -this.maxSpeed * this.cfg.reverseSpeedFactor,
+          this.speed - this.accel * this.cfg.reverseAccelerationFactor * delta
+        );
       }
     } else {
       // Rozamiento natural
@@ -361,16 +380,18 @@ export class RescueVan {
     }
 
     if (input.handbrake) {
-      this.speed = Math.max(0, this.speed - this.brakeForce * 2 * delta);
+      this.speed = Math.max(0, this.speed - this.brakeForce * this.cfg.handbrakeMultiplier * delta);
     }
 
     // 2. Dirección de ruedas y giro del vehículo
     const targetSteer = steerInput * this.maxSteer;
-    this.steerAngle += (targetSteer - this.steerAngle) * Math.min(1, delta * 9);
+    this.steerAngle += (targetSteer - this.steerAngle) * Math.min(1, delta * this.cfg.steerLerpSpeed);
 
-    if (Math.abs(this.speed) > 0.05) {
+    if (Math.abs(this.speed) > this.cfg.minSpeedToTurn) {
       const turnMultiplier = this.speed > 0 ? 1 : -1;
-      this.heading += this.steerAngle * (this.speed / 14) * delta * turnMultiplier * 2.2;
+      this.heading += this.steerAngle
+        * (this.speed / this.cfg.turnSpeedReference)
+        * delta * turnMultiplier * this.cfg.turnRateMultiplier;
     }
 
     // 3. Desplazamiento en el espacio 3D
@@ -381,24 +402,27 @@ export class RescueVan {
     this.position.z += forwardZ * this.speed * delta;
 
     // Límites de exploración del mundo
-    this.position.x = Math.max(-115, Math.min(115, this.position.x));
-    this.position.z = Math.max(-115, Math.min(115, this.position.z));
+    const { boundsMin, boundsMax } = this.worldCfg;
+    this.position.x = Math.max(boundsMin, Math.min(boundsMax, this.position.x));
+    this.position.z = Math.max(boundsMin, Math.min(boundsMax, this.position.z));
 
     // Ajuste a la altura del terreno con suavizado de amortiguación
     const groundY = this.terrain.getHeight(this.position.x, this.position.z, zoneId);
-    this.position.y += (groundY - this.position.y) * Math.min(1, delta * 12);
+    this.position.y += (groundY - this.position.y) * Math.min(1, delta * this.cfg.suspensionLerpSpeed);
 
     // Inclinación de cabeceo y alabeo según la pendiente del terreno
-    const aheadX = this.position.x + forwardX * 2.2;
-    const aheadZ = this.position.z + forwardZ * 2.2;
+    const pitchDist = this.cfg.pitchSampleDistance;
+    const aheadX = this.position.x + forwardX * pitchDist;
+    const aheadZ = this.position.z + forwardZ * pitchDist;
     const aheadY = this.terrain.getHeight(aheadX, aheadZ, zoneId);
-    const pitch = Math.atan2(aheadY - groundY, 2.2);
+    const pitch = Math.atan2(aheadY - groundY, pitchDist);
 
+    const rollDist = this.cfg.rollSampleDistance;
     const rightX = Math.cos(this.heading);
     const rightZ = -Math.sin(this.heading);
-    const rY = this.terrain.getHeight(this.position.x + rightX * 1.2, this.position.z + rightZ * 1.2, zoneId);
-    const lY = this.terrain.getHeight(this.position.x - rightX * 1.2, this.position.z - rightZ * 1.2, zoneId);
-    const roll = Math.atan2(rY - lY, 2.4);
+    const rY = this.terrain.getHeight(this.position.x + rightX * rollDist, this.position.z + rightZ * rollDist, zoneId);
+    const lY = this.terrain.getHeight(this.position.x - rightX * rollDist, this.position.z - rightZ * rollDist, zoneId);
+    const roll = Math.atan2(rY - lY, rollDist * 2);
 
     this.group.position.copy(this.position);
     this.group.rotation.set(-pitch, this.heading, -roll, 'YXZ');
@@ -407,7 +431,7 @@ export class RescueVan {
     for (const h of this.frontWheelHolders) {
       h.rotation.y = this.steerAngle;
     }
-    const wheelRoll = (this.speed * delta) / 0.48;
+    const wheelRoll = (this.speed * delta) / this.cfg.wheelRadius;
     for (const w of this.wheels) {
       w.rotation.x += wheelRoll;
     }
@@ -417,14 +441,14 @@ export class RescueVan {
 
     // 6. Audio del motor
     if (this.engineOsc && this.audioCtx) {
-      const targetFreq = 45 + Math.abs(this.speed) * 9;
+      const targetFreq = this.audioCfg.engineBaseFrequency + Math.abs(this.speed) * this.audioCfg.engineFrequencyPerSpeed;
       this.engineOsc.frequency.setTargetAtTime(targetFreq, this.audioCtx.currentTime, 0.1);
     }
   }
 
   /** Actualización del movimiento del guardián a pie */
   updateRangerFoot(delta, input, zoneId) {
-    const walkSpeed = input.handbrake ? 8 : 4.5;
+    const walkSpeed = input.handbrake ? this.rangerCfg.sprintSpeed : this.rangerCfg.walkSpeed;
     let forward = 0;
     if (input.forward) forward += 1;
     if (input.backward) forward -= 1;
@@ -432,15 +456,16 @@ export class RescueVan {
     if (input.left) turn += 1;
     if (input.right) turn -= 1;
 
-    this.rangerHeading += turn * 2.8 * delta;
+    this.rangerHeading += turn * this.rangerCfg.turnSpeed * delta;
 
     if (forward !== 0) {
       this.rangerPosition.x += Math.sin(this.rangerHeading) * forward * walkSpeed * delta;
       this.rangerPosition.z += Math.cos(this.rangerHeading) * forward * walkSpeed * delta;
     }
 
-    this.rangerPosition.x = Math.max(-115, Math.min(115, this.rangerPosition.x));
-    this.rangerPosition.z = Math.max(-115, Math.min(115, this.rangerPosition.z));
+    const { boundsMin: rMin, boundsMax: rMax } = this.worldCfg;
+    this.rangerPosition.x = Math.max(rMin, Math.min(rMax, this.rangerPosition.x));
+    this.rangerPosition.z = Math.max(rMin, Math.min(rMax, this.rangerPosition.z));
     this.rangerPosition.y = this.terrain.getHeight(this.rangerPosition.x, this.rangerPosition.z, zoneId);
   }
 
@@ -455,7 +480,7 @@ export class RescueVan {
       return;
     }
 
-    const flash = Math.sin(time * 16) > 0;
+    const flash = Math.sin(time * this.audioCfg.sirenFlashHz) > 0;
     for (const s of this.sirenLights) {
       s.light.intensity = flash ? 3.5 : 0.8;
       s.light.color.setHex(flash ? 0x00b4d8 : 0xffb703);
@@ -468,21 +493,23 @@ export class RescueVan {
   updateCamera(camera, delta) {
     if (this.isFootMode) {
       // Cámara en tercera persona sobre el guardián
+      const foot = this.cameraCfg.foot;
       const camOffset = new THREE.Vector3(
-        -Math.sin(this.rangerHeading) * 4.5,
-        2.2,
-        -Math.cos(this.rangerHeading) * 4.5
+        -Math.sin(this.rangerHeading) * foot.distance,
+        foot.height,
+        -Math.cos(this.rangerHeading) * foot.distance
       );
       const targetPos = this.rangerPosition.clone().add(camOffset);
-      camera.position.lerp(targetPos, Math.min(1, delta * 10));
-      camera.lookAt(this.rangerPosition.x, this.rangerPosition.y + 1.2, this.rangerPosition.z);
+      camera.position.lerp(targetPos, Math.min(1, delta * foot.lerpSpeed));
+      camera.lookAt(this.rangerPosition.x, this.rangerPosition.y + foot.lookAtHeight, this.rangerPosition.z);
       return;
     }
 
     if (this.cameraMode === 'chase') {
       // Tercera persona detrás de la furgoneta
-      const camDist = 9.5;
-      const camHeight = 3.6;
+      const chase = this.cameraCfg.chase;
+      const camDist = chase.distance;
+      const camHeight = chase.height;
       const fwdX = Math.sin(this.heading);
       const fwdZ = Math.cos(this.heading);
 
@@ -492,19 +519,21 @@ export class RescueVan {
         this.position.z - fwdZ * camDist
       );
 
-      camera.position.lerp(targetPos, Math.min(1, delta * 6));
-      camera.lookAt(this.position.x, this.position.y + 1.4, this.position.z);
+      camera.position.lerp(targetPos, Math.min(1, delta * chase.lerpSpeed));
+      camera.lookAt(this.position.x, this.position.y + chase.lookAtHeight, this.position.z);
     } else if (this.cameraMode === 'hood') {
       // Primera persona / Capó
-      const hoodOffset = new THREE.Vector3(0, 1.8, 1.6).applyAxisAngle(new THREE.Vector3(0, 1, 0), this.heading);
-      const lookOffset = new THREE.Vector3(0, 1.6, 20).applyAxisAngle(new THREE.Vector3(0, 1, 0), this.heading);
+      const hood = this.cameraCfg.hood;
+      const hoodOffset = new THREE.Vector3(...hood.offset).applyAxisAngle(new THREE.Vector3(0, 1, 0), this.heading);
+      const lookOffset = new THREE.Vector3(...hood.lookOffset).applyAxisAngle(new THREE.Vector3(0, 1, 0), this.heading);
 
       camera.position.copy(this.position).add(hoodOffset);
       camera.lookAt(this.position.clone().add(lookOffset));
     } else if (this.cameraMode === 'top') {
       // Vista táctil cenital de rescate
-      const targetPos = new THREE.Vector3(this.position.x, this.position.y + 32, this.position.z);
-      camera.position.lerp(targetPos, Math.min(1, delta * 6));
+      const top = this.cameraCfg.top;
+      const targetPos = new THREE.Vector3(this.position.x, this.position.y + top.height, this.position.z);
+      camera.position.lerp(targetPos, Math.min(1, delta * top.lerpSpeed));
       camera.lookAt(this.position.x, this.position.y, this.position.z);
     }
   }

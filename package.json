@@ -8,7 +8,9 @@
     "build": "node scripts/build-static.mjs && vite build",
     "build:static": "node scripts/build-static.mjs",
     "preview": "vite preview",
-    "check:pano": "node scripts/pano-check.mjs static && node scripts/pano-check.mjs dist"
+    "check:pano": "node scripts/pano-check.mjs static && node scripts/pano-check.mjs dist",
+    "test:engine": "node scripts/engine-test.mjs",
+    "test:smoke": "node scripts/smoke.mjs"
   },
   "dependencies": {
     "@vitejs/plugin-react": "latest",
