@@ -81,7 +81,7 @@ const Arbusto = () => (
 const Naranjo = () => (
   <g>
     {/* La copa texturizada mantiene el guiño de naranjo con frutos encima. */}
-    <FoliageAtlas src={VEGETATION_ASSETS.orchard.textureUrl} x="-36" y="-52" width="72" height="78" />
+    <FoliageAtlas src={VEGETATION_ASSETS.citrus.textureUrl} x="-36" y="-52" width="72" height="78" />
     <circle cx="-10" cy="-17" r="2.6" fill="#f0a13c" />
     <circle cx="7" cy="-22" r="2.6" fill="#f0a13c" />
     <circle cx="12" cy="-9" r="2.6" fill="#f0a13c" />

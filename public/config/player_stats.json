@@ -27,7 +27,16 @@
     "suspensionLerpSpeed": 12,
     "pitchSampleDistance": 2.2,
     "rollSampleDistance": 1.2,
-    "boostMultiplier": 1.35
+    "boostMultiplier": 1.35,
+    "wheelBase": 3.2,
+    "trackWidth": 2.36,
+    "collisionRadius": 1.7,
+    "maxPitch": 0.42,
+    "maxRoll": 0.3,
+    "tiltLerpSpeed": 6,
+    "impactGrip": 0.82,
+    "softDrag": 2.5,
+    "waterBrake": 0.25
   },
   "ranger": {
     "walkSpeed": 4.5,
@@ -43,7 +52,8 @@
     "dashCooldownSeconds": 0.9,
     "eyeHeight": 1.2,
     "dismountDistance": 2.0,
-    "doorSide": 1
+    "doorSide": 1,
+    "collisionRadius": 0.45
   },
   "world": {
     "boundsMin": -115,

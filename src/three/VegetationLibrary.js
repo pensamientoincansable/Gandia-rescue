@@ -88,10 +88,27 @@ export function loadVegetationTemplate(assetId) {
 
       source.geometry.computeBoundingBox();
       source.geometry.computeBoundingSphere();
+
+      // Huella en metros del modelo (antes de aplicar la escala de la
+      // plantilla) y tipo de obstáculo: los arbustos son “blandos” (sólo
+      // rozan), los árboles son sólidos (la furgoneta choca).
+      const box = source.geometry.boundingBox;
+      const footprint = {
+        radiusX: Math.max(Math.abs(box.min.x), Math.abs(box.max.x)),
+        radiusZ: Math.max(Math.abs(box.min.z), Math.abs(box.max.z)),
+        height: Math.max(0.5, box.max.y - box.min.y),
+      };
+      const isBush = /^bush/.test(assetId) || assetId.startsWith('bush');
+
       return {
         geometry: source.geometry,
         material,
         scale: asset.scale,
+        footprint,
+        soft: isBush,
+        // El tronco ocupa bastante menos que la copa: se estima un 45 % del
+        // radio de la silueta para no bloquear donde sólo hay hojas.
+        collideScale: isBush ? 0.5 : 0.45,
       };
     })
     .catch(() => null);
@@ -103,15 +120,30 @@ export function loadVegetationTemplate(assetId) {
 /**
  * Inserta una familia de árboles / arbustos en un grupo de InstancedMesh.
  *
+ * Los `placements` admiten escala uniforme (`scale: número`) o no uniforme
+ * (`scale: [x, y, z]`), lo que permite reutilizar los mismos FBX como carrizos
+ * altos y estrechos o como matas bajas y anchas sin añadir recursos nuevos.
+ *
  * @param {string} assetId clave de `VEGETATION_ASSETS`
- * @param {{x:number,z:number, y?:number, scale?:number, rotation?:number}[]} placements
+ * @param {{x:number,z:number, y?:number, scale?:number|number[], rotation?:number, soft?:boolean}[]} placements
  * @param {THREE.Group} group destino
  * @param {(x:number,z:number)=>number} heightAt fuente de altura del terreno
  * @param {() => boolean} isCurrent evita que cargas asíncronas de una zona
  * antigua reaparezcan después de viajar.
+ * @param {{ onColliders?: (colliders: object[]) => void }} [options]
+ *   `onColliders` recibe la huella real en metros de cada ejemplar (calculada
+ *   con la caja envolvente del FBX ya escalada) para que el mundo registre los
+ *   troncos como obstáculos y la furgoneta deje de atravesarlos.
  * @returns {Promise<THREE.InstancedMesh|null>}
  */
-export async function addInstancedVegetation(assetId, placements, group, heightAt, isCurrent = () => true) {
+export async function addInstancedVegetation(
+  assetId,
+  placements,
+  group,
+  heightAt,
+  isCurrent = () => true,
+  { onColliders } = {},
+) {
   if (!placements?.length) return null;
   const template = await loadVegetationTemplate(assetId);
   if (!template || !isCurrent()) return null;
@@ -126,21 +158,41 @@ export async function addInstancedVegetation(assetId, placements, group, heightA
   mesh.userData.sharedVegetation = true;
   mesh.userData.assetId = assetId;
 
+  const colliders = [];
   const dummy = new THREE.Object3D();
   for (let index = 0; index < placements.length; index += 1) {
     const placement = placements[index];
     const y = placement.y ?? heightAt(placement.x, placement.z);
-    const s = template.scale * (placement.scale ?? 1);
+    const extra = placement.scale ?? 1;
+    const extraScale = Array.isArray(extra) ? extra : [extra, extra, extra];
+    const sx = template.scale * extraScale[0];
+    const sy = template.scale * extraScale[1];
+    const sz = template.scale * extraScale[2];
     dummy.position.set(placement.x, y, placement.z);
     dummy.rotation.set(0, placement.rotation ?? 0, 0);
-    dummy.scale.set(s, s, s);
+    dummy.scale.set(sx, sy, sz);
     dummy.updateMatrix();
     mesh.setMatrixAt(index, dummy.matrix);
+
+    if (onColliders) {
+      // Huella en planta del modelo ya escalado (media de ancho y fondo).
+      const radius = ((template.footprint.radiusX + template.footprint.radiusZ) / 2) * Math.max(sx, sz);
+      colliders.push({
+        x: placement.x,
+        z: placement.z,
+        radius: Math.max(0.18, radius * (placement.collideScale ?? template.collideScale)),
+        height: Math.max(0.5, template.footprint.height * sy),
+        // Arbustos y herbáceas frenan, pero no detienen al vehículo.
+        soft: placement.soft ?? template.soft,
+        type: 'vegetation',
+      });
+    }
   }
   mesh.instanceMatrix.needsUpdate = true;
   mesh.computeBoundingSphere();
 
   if (!isCurrent()) return null;
   group.add(mesh);
+  onColliders?.(colliders);
   return mesh;
 }

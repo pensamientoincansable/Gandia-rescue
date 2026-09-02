@@ -61,6 +61,20 @@ export class RescueVan {
     this.rangerVy = 0;
     this.rangerGrounded = true;
 
+    /**
+     * Radios de colisión. El de la furgoneta es su media anchura real
+     * (2,4 m de caja → 1,7 m de radio útil) y el del guardián, su hombro.
+     * Antes no existían: por eso el vehículo atravesaba árboles y fachadas.
+     */
+    this.collisionRadius = this.cfg.collisionRadius ?? 1.7;
+    this.rangerCollisionRadius = this.rangerCfg.collisionRadius ?? 0.45;
+
+    // Inclinación suavizada (el cabeceo y el alabeo ya no se calculan en
+    // crudo cada fotograma: se interpola y se limita a un máximo sensato).
+    this.smoothPitch = 0;
+    this.smoothRoll = 0;
+    this.lastImpact = 0;
+
     // Avatar del guardián a pie (modelo detallado con AnimationMixer, o monigote).
     this.rangerGroup = new THREE.Group();
     this.rangerGroup.visible = false;
@@ -543,10 +557,12 @@ export class RescueVan {
         * delta * turnMultiplier * this.cfg.turnRateMultiplier;
     }
 
-    // 3. Desplazamiento en el espacio 3D
+    // 3. Desplazamiento en el espacio 3D con resolución de colisiones
     const forwardX = Math.sin(this.heading);
     const forwardZ = Math.cos(this.heading);
 
+    const previousX = this.position.x;
+    const previousZ = this.position.z;
     this.position.x += forwardX * this.speed * delta;
     this.position.z += forwardZ * this.speed * delta;
 
@@ -554,6 +570,11 @@ export class RescueVan {
     const { boundsMin, boundsMax } = this.worldCfg;
     this.position.x = Math.max(boundsMin, Math.min(boundsMax, this.position.x));
     this.position.z = Math.max(boundsMin, Math.min(boundsMax, this.position.z));
+
+    // 3.b Colisión contra los objetos del mundo (árboles, rocas, farolas,
+    // fachadas…) y contra el agua profunda. Antes no existía y la furgoneta
+    // atravesaba todo lo que encontraba por delante.
+    this._resolveWorldCollisions(previousX, previousZ, forwardX, forwardZ, zoneId, delta);
 
     // Ajuste a la altura del terreno con suavizado de amortiguación.
     // Usamos el raycasting vertical real (getGroundHeight) y, como medida de
@@ -565,22 +586,20 @@ export class RescueVan {
     this.position.y += (groundY - this.position.y) * Math.min(1, delta * this.cfg.suspensionLerpSpeed);
     if (this.position.y < groundY - 0.05) this.position.y = groundY;
 
-    // Inclinación de cabeceo y alabeo según la pendiente del terreno
-    const pitchDist = this.cfg.pitchSampleDistance;
-    const aheadX = this.position.x + forwardX * pitchDist;
-    const aheadZ = this.position.z + forwardZ * pitchDist;
-    const aheadY = this.terrain.getHeight(aheadX, aheadZ, zoneId);
-    const pitch = Math.atan2(aheadY - groundY, pitchDist);
-
-    const rollDist = this.cfg.rollSampleDistance;
-    const rightX = Math.cos(this.heading);
-    const rightZ = -Math.sin(this.heading);
-    const rY = this.terrain.getHeight(this.position.x + rightX * rollDist, this.position.z + rightZ * rollDist, zoneId);
-    const lY = this.terrain.getHeight(this.position.x - rightX * rollDist, this.position.z - rightZ * rollDist, zoneId);
-    const roll = Math.atan2(rY - lY, rollDist * 2);
-
+    /* ------------------------------------------------------------------
+     * Inclinación: se muestrea la altura REAL en las cuatro ruedas (con
+     * raycasting, no con la altura analítica) y se promedia. Antes se
+     * comparaban sólo dos puntos a muy poca distancia, así que cualquier
+     * irregularidad del relieve volcaba la furgoneta de costado.
+     * ------------------------------------------------------------------ */
+    this._tiltDelta = delta;
+    const tilt = this._sampleTilt(zoneId, groundY);
     this.group.position.copy(this.position);
-    this.group.rotation.set(-pitch, this.heading, -roll, 'YXZ');
+    /* Convención de signos:
+     *   · rotation.x = -pitch → el morro sube cuando el terreno sube.
+     *   · rotation.z = -roll  → se levanta el costado que pisa más alto
+     *     (el eje local +X es el izquierdo, de ahí el signo negativo). */
+    this.group.rotation.set(-tilt.pitch, this.heading, -tilt.roll, 'YXZ');
 
     // 4. Animación de ruedas móviles
     for (const h of this.frontWheelHolders) {
@@ -599,6 +618,150 @@ export class RescueVan {
       const targetFreq = this.audioCfg.engineBaseFrequency + Math.abs(this.speed) * this.audioCfg.engineFrequencyPerSpeed;
       this.engineOsc.frequency.setTargetAtTime(targetFreq, this.audioCtx.currentTime, 0.1);
     }
+  }
+
+  /**
+   * Resuelve el choque contra los objetos del mundo y contra el agua.
+   *
+   * El vehículo nunca vuelve a atravesar un obstáculo: si al avanzar entra en
+   * el cilindro de un árbol, una roca o una fachada, se le expulsa por la
+   * normal del contacto y su velocidad se **desliza** sobre la tangente, de
+   * modo que rozar un muro no significa quedarse clavado.
+   *
+   * @param {number} previousX posición antes de avanzar
+   * @param {number} previousZ
+   * @param {number} forwardX vector dirección
+   * @param {number} forwardZ
+   * @param {string} zoneId
+   * @param {number} delta
+   */
+  _resolveWorldCollisions(previousX, previousZ, forwardX, forwardZ, zoneId, delta) {
+    const obstacles = this.terrain?.obstacles;
+    if (!obstacles || obstacles.count === 0) {
+      this._avoidWater(previousX, previousZ, zoneId);
+      return;
+    }
+
+    // Detección continua: a 24 m/s un fotograma largo recorre más de un metro,
+    // suficiente para “saltarse” un tronco fino. Se comprueba el segmento.
+    const segment = obstacles.segmentBlocked(previousX, previousZ, this.position.x, this.position.z, this.collisionRadius);
+    if (segment.blocked) {
+      this.position.x = segment.x;
+      this.position.z = segment.z;
+
+      // Deslizamiento: se conserva la componente tangencial de la velocidad.
+      const intoWall = forwardX * segment.nx + forwardZ * segment.nz;
+      if (intoWall < 0) {
+        const tangential = Math.sqrt(Math.max(0, 1 - intoWall * intoWall));
+        const grip = this.cfg.impactGrip ?? 0.82;
+        this.speed *= Math.max(0.05, tangential * grip);
+        this.lastImpact = Math.min(1, Math.abs(intoWall));
+      }
+    }
+
+    // Segunda pasada: corrige el solape residual (por ejemplo, al aparecer
+    // justo encima de un obstáculo al cambiar de zona).
+    const resolution = obstacles.resolveCircle(
+      this.position.x,
+      this.position.z,
+      this.collisionRadius,
+      { respectSoft: false },
+    );
+    if (resolution.hit) {
+      this.position.x = resolution.x;
+      this.position.z = resolution.z;
+      const intoWall = forwardX * resolution.nx + forwardZ * resolution.nz;
+      if (intoWall < 0) {
+        const tangential = Math.sqrt(Math.max(0, 1 - intoWall * intoWall));
+        this.speed *= Math.max(0.05, tangential * (this.cfg.impactGrip ?? 0.82));
+        this.lastImpact = Math.min(1, Math.abs(intoWall));
+      }
+    } else if (resolution.soft && this.cfg.softDrag) {
+      // Carrizos y matorral: rozan, pero no detienen al vehículo.
+      this.speed -= this.speed * Math.min(1, this.cfg.softDrag * delta);
+    }
+
+    this._avoidWater(previousX, previousZ, zoneId);
+  }
+
+  /**
+   * Impide meter la furgoneta en el mar, la dársena o el cauce del Serpis.
+   * La barrera se ensancha con el radio del vehículo para que se detenga
+   * cuando el morro toca el agua, no cuando el eje ya está dentro.
+   */
+  _avoidWater(previousX, previousZ, zoneId) {
+    if (!this.terrain?.isFlooded) return;
+    const margin = this.collisionRadius * 0.9;
+    if (!this.terrain.isFlooded(this.position.x, this.position.z, zoneId, this.position.y + 2, margin)) return;
+
+    this.position.x = previousX;
+    this.position.z = previousZ;
+    this.speed *= this.cfg.waterBrake ?? 0.25;
+    this.lastImpact = Math.max(this.lastImpact, 0.4);
+  }
+
+  /**
+   * Cabeceo y alabeo a partir de la altura real en las cuatro ruedas.
+   * El resultado se interpola y se limita a `maxPitch` / `maxRoll` para que la
+   * furgoneta acompañe el relieve sin llegar a volcar visualmente.
+   */
+  _sampleTilt(zoneId, groundY) {
+    const cfg = this.cfg;
+    const halfLength = (cfg.wheelBase ?? 3.2) / 2;
+    const halfWidth = (cfg.trackWidth ?? 2.36) / 2;
+    const cos = Math.cos(this.heading);
+    const sin = Math.sin(this.heading);
+    const sampleY = this.position.y + 1.5;
+
+    const sample = (offsetX, offsetZ) => {
+      const x = this.position.x + offsetX;
+      const z = this.position.z + offsetZ;
+      if (this.terrain.getGroundHeight) {
+        return this.terrain.getGroundHeight(x, z, zoneId, sampleY);
+      }
+      return this.terrain.getHeight(x, z, zoneId);
+    };
+
+    /* Esquinas del rectángulo de apoyo en coordenadas de mundo.
+     *
+     * Ojo con la orientación: con el morro en +Z, el eje local +X de la
+     * furgoneta es su costado IZQUIERDO (derecha = adelante × arriba). El
+     * código anterior muestreaba el lado contrario y el vehículo se tumbaba
+     * hacia fuera de la pendiente en vez de apoyarse en ella. */
+    const rightX = -cos;
+    const rightZ = sin;
+
+    const frontRight = sample(sin * halfLength + rightX * halfWidth, cos * halfLength + rightZ * halfWidth);
+    const frontLeft = sample(sin * halfLength - rightX * halfWidth, cos * halfLength - rightZ * halfWidth);
+    const rearRight = sample(-sin * halfLength + rightX * halfWidth, -cos * halfLength + rightZ * halfWidth);
+    const rearLeft = sample(-sin * halfLength - rightX * halfWidth, -cos * halfLength - rightZ * halfWidth);
+
+    const front = (frontLeft + frontRight) / 2;
+    const rear = (rearLeft + rearRight) / 2;
+    const right = (frontRight + rearRight) / 2;
+    const left = (frontLeft + rearLeft) / 2;
+
+    const reference = (front + rear + left + right) / 4;
+    let pitch = Math.atan2(front - rear, halfLength * 2);
+    let roll = Math.atan2(right - left, halfWidth * 2);
+
+    // La inclinación se mide sobre el apoyo real, pero si el vehículo está en
+    // el aire (o el rayo falla) se suaviza hacia la referencia del suelo.
+    if (!Number.isFinite(pitch)) pitch = 0;
+    if (!Number.isFinite(roll)) roll = 0;
+
+    const maxPitch = cfg.maxPitch ?? 0.42;
+    const maxRoll = cfg.maxRoll ?? 0.3;
+    pitch = Math.max(-maxPitch, Math.min(maxPitch, pitch));
+    roll = Math.max(-maxRoll, Math.min(maxRoll, roll));
+
+    // Suavizado: la suspensión no responde de golpe a cada piedra.
+    const lerp = Math.min(1, (cfg.tiltLerpSpeed ?? 6) * (this._tiltDelta ?? 1 / 60));
+    this.smoothPitch += (pitch - this.smoothPitch) * lerp;
+    this.smoothRoll += (roll - this.smoothRoll) * lerp;
+    this._groundReference = reference || groundY;
+
+    return { pitch: this.smoothPitch, roll: this.smoothRoll };
   }
 
   /** Actualización del movimiento del guardián a pie */
@@ -625,6 +788,21 @@ export class RescueVan {
     const { boundsMin: rMin, boundsMax: rMax } = this.worldCfg;
     this.rangerPosition.x = Math.max(rMin, Math.min(rMax, this.rangerPosition.x));
     this.rangerPosition.z = Math.max(rMin, Math.min(rMax, this.rangerPosition.z));
+
+    // Colisión horizontal: el guardián tampoco atraviesa árboles ni muros.
+    const obstacles = this.terrain?.obstacles;
+    if (obstacles && obstacles.count > 0 && moving) {
+      const resolution = obstacles.resolveCircle(
+        this.rangerPosition.x,
+        this.rangerPosition.z,
+        this.rangerCollisionRadius,
+        { respectSoft: false },
+      );
+      if (resolution.hit) {
+        this.rangerPosition.x = resolution.x;
+        this.rangerPosition.z = resolution.z;
+      }
+    }
 
     // ---------- Colisión vertical: raycasting + CCD ----------
     // Salto (flanco de entrada) sólo si estamos sobre el suelo.

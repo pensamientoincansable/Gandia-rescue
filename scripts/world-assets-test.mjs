@@ -10,9 +10,12 @@ import { existsSync, readFileSync, statSync } from 'node:fs';
 import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { FBXLoader } from 'three/examples/jsm/loaders/FBXLoader.js';
+import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import {
-  SHELTER_TEXTURES, SKY_TEXTURES, TERRAIN_TEXTURES, VEGETATION_ASSETS,
+  MATERIAL_SETTINGS, MATERIAL_TEXTURES, PROP_MODELS, SHELTER_TEXTURES,
+  SHELTER_TREE_SPRITES, SKY_TEXTURES, SATELLITE_TEXTURES, TERRAIN_TEXTURES, VEGETATION_ASSETS,
 } from '../src/three/WorldAssets.js';
+import { PROP_TEMPLATES } from '../src/three/PropsLibrary.js';
 
 let failures = 0;
 const expect = (condition, label) => {
@@ -23,8 +26,8 @@ const existingUrl = (url) => {
   try { return url.startsWith('file:') && existsSync(fileURLToPath(url)); } catch { return false; }
 };
 const projectRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-const publicWorld = join(projectRoot, 'public', 'world');
-const staticWorld = join(projectRoot, 'static', 'world');
+const publicRoot = join(projectRoot, 'public');
+const staticRoot = join(projectRoot, 'static');
 const configuredUrls = new Set();
 const track = (url) => { configuredUrls.add(url); return existingUrl(url); };
 
@@ -60,24 +63,82 @@ for (const [assetId, asset] of Object.entries(VEGETATION_ASSETS)) {
   }
 }
 
+console.log('· Satélite reservado a las rutas practicables');
+for (const [zone, url] of Object.entries(SATELLITE_TEXTURES)) {
+  expect(track(url), `${zone}: imagen satelital disponible para su ruta`);
+}
+expect(TERRAIN_TEXTURES === SATELLITE_TEXTURES, 'el suelo ya no usa satélite (alias de compatibilidad)');
+
+console.log('· Materiales de atrezo y suelo');
+for (const [kind, url] of Object.entries(MATERIAL_TEXTURES)) {
+  const ok = track(url);
+  expect(ok, `${kind}: mapa de material adaptado desde media/image`);
+  expect(Boolean(MATERIAL_SETTINGS[kind]?.tint !== undefined), `${kind}: ajustes de tinte definidos`);
+}
+for (const sprite of SHELTER_TREE_SPRITES) {
+  expect(track(sprite), 'atlas de vegetación del refugio disponible');
+}
+
+console.log('· Modelos .glb de atrezo e hitos');
+const materialNames = new Set(Object.keys(MATERIAL_SETTINGS));
+for (const [propId, url] of Object.entries(PROP_MODELS)) {
+  const hasModel = track(url);
+  expect(hasModel, `${propId}: modelo .glb generado en public/world/props`);
+  if (!hasModel) continue;
+  try {
+    const bytes = readFileSync(fileURLToPath(url));
+    const buffer = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
+    const gltf = await new Promise((resolve, reject) => {
+      new GLTFLoader().parse(buffer, '', resolve, reject);
+    });
+    let meshes = 0;
+    let triangles = 0;
+    const used = new Set();
+    gltf.scene.traverse((node) => {
+      if (!node.isMesh) return;
+      meshes += 1;
+      triangles += node.geometry.attributes.position.count / 3;
+      const mats = Array.isArray(node.material) ? node.material : [node.material];
+      for (const material of mats) used.add(material?.name);
+    });
+    expect(meshes > 0, `${propId}: contiene geometría modelada (${meshes} piezas)`);
+    expect(triangles > 40, `${propId}: silueta trabajada (${Math.round(triangles)} triángulos)`);
+    const unknown = [...used].filter((name) => name && !materialNames.has(name)
+      && !['glass', 'water', 'beacon', 'lamp', 'rope', 'flag'].includes(name));
+    expect(unknown.length === 0, `${propId}: materiales reconocibles [${[...used].join(', ')}]`);
+  } catch (error) {
+    expect(false, `${propId}: el .glb se puede parsear (${error.message})`);
+  }
+}
+
+console.log('· Atrezo instanciado');
+for (const [propId, template] of Object.entries(PROP_TEMPLATES)) {
+  const parts = template.parts ?? [];
+  expect(parts.length > 0, `${propId}: define piezas modeladas`);
+  expect(parts.every((part) => typeof part.geometry === 'function'), `${propId}: geometría construible`);
+  expect(parts.every((part) => materialNames.has(part.material)
+    || ['glass', 'water', 'beacon', 'lamp', 'rope', 'flag'].includes(part.material)),
+    `${propId}: materiales con mapa propio`);
+}
+
 console.log('· Copia publicada para GitHub Pages');
 const missingStaticCopies = [];
 const staleStaticCopies = [];
 for (const url of configuredUrls) {
   try {
     const source = fileURLToPath(url);
-    const published = join(staticWorld, relative(publicWorld, source));
+    const published = join(staticRoot, relative(publicRoot, source));
     if (!existsSync(published)) {
-      missingStaticCopies.push(relative(publicWorld, source));
+      missingStaticCopies.push(relative(publicRoot, source));
     } else if (statSync(published).size !== statSync(source).size) {
-      staleStaticCopies.push(relative(publicWorld, source));
+      staleStaticCopies.push(relative(publicRoot, source));
     }
   } catch {
     missingStaticCopies.push(url);
   }
 }
-expect(missingStaticCopies.length === 0, `static/world incluye los ${configuredUrls.size} recursos configurados`);
-expect(staleStaticCopies.length === 0, 'las copias publicadas coinciden en tamaño con public/world');
+expect(missingStaticCopies.length === 0, `static/ incluye los ${configuredUrls.size} recursos configurados`);
+expect(staleStaticCopies.length === 0, 'las copias publicadas coinciden en tamaño con public/');
 
 console.log(failures === 0
   ? '\n✓ Recursos ambientales validados'
