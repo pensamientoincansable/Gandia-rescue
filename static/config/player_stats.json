@@ -41,7 +41,9 @@
     "dashSpeed": 14,
     "dashDurationSeconds": 0.18,
     "dashCooldownSeconds": 0.9,
-    "eyeHeight": 1.2
+    "eyeHeight": 1.2,
+    "dismountDistance": 2.0,
+    "doorSide": 1
   },
   "world": {
     "boundsMin": -115,

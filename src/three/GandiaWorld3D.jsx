@@ -74,6 +74,7 @@ export default function GandiaWorld3D({
     left: false,
     right: false,
     handbrake: false,
+    jump: false,
   });
   const inputManagerRef = useRef(null);
   const statsRef = useRef(DEFAULT_PLAYER_STATS);
@@ -207,14 +208,17 @@ export default function GandiaWorld3D({
         left: inputRef.current.left || !!virtualInput?.left,
         right: inputRef.current.right || !!virtualInput?.right,
         handbrake: inputRef.current.handbrake || !!virtualInput?.handbrake,
+        // Salto: flanco de entrada que consume el bucle de física este frame.
+        jump: inputRef.current.jump,
       };
+      inputRef.current.jump = false;
 
       terrain.update(delta, time);
       instanced.update(time);
       van.update(delta, currentInput, zoneId, time);
       van.updateCamera(camera, delta);
       fauna.update(delta, time);
-      npcs.update(time, camera);
+      npcs.update(time, camera, delta);
       clues.update(time);
       atmosphere.update(delta, time);
 
@@ -340,6 +344,8 @@ export default function GandiaWorld3D({
         }
         if (manager.wasPressed('INTERACT')) triggerContextInteractionRef.current();
         if (manager.wasPressed('HONK')) vanRef.current?.honk();
+        // El salto es un flanco de entrada que consume la física del guardián.
+        if (manager.wasPressed('JUMP')) inputRef.current.jump = true;
 
         // Sirena, faros, cámara y entrar/salir del vehículo son propiedad del
         // estado de React: se notifican hacia arriba en vez de mutar la escena.

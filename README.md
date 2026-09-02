@@ -109,6 +109,31 @@ retocar **sin recompilar** el juego.
 | `GameLoop.js` | Bucle principal con paso fijo que orquesta `InputManager` + `PlayerController` y delega el dibujado. |
 | `defaults.js` | Copias empaquetadas de los mismos JSON, usadas sólo como respaldo sin red (tests, jsdom). |
 
+### Modelos 3D — `public/models/`
+
+Los humanos y animales se cargan con **modelos 3D `.glb`** mediante `GLTFLoader` y
+se animan con un **`AnimationMixer`** (reposo, caminar, correr y saltar). El
+manifiesto `public/config/models.json` mapea cada entidad a su `.glb` y al nombre
+de sus clips de animación.
+
+| Fichero | Animaciones |
+| --- | --- |
+| `models/ranger.glb` | `Idle`, `Walk`, `Run`, `Jump` |
+| `models/npc.glb` | `Idle`, `Walk`, `Talk` |
+| `models/animals/*.glb` (8 especies) | `Idle` (+ `Fly` en la gaviota) |
+
+Los `.glb` se generan proceduralmente (low-poly con jerarquía de pivotes por
+extremidad y `AnimationClips`) con Three.js:
+
+```bash
+node scripts/gen-models.mjs   # regenera public/models/*.glb
+```
+
+Diseño defensivo: si un modelo falta o su descarga falla, la entidad usa
+automáticamente el monigote de primitivas como respaldo. Para sustituirlos por
+modelos externos basta con dejar otro `.glb` en `public/models/` y editar
+`public/config/models.json`.
+
 ### Ejemplo de integración
 
 ```js

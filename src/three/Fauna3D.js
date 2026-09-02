@@ -1,10 +1,14 @@
 import * as THREE from 'three';
+import { AnimatedEntity } from './AnimatedEntity.js';
+import { loadModelsManifest } from './ModelLoader.js';
 
 /**
  * Representación 3D animada de la fauna local de Gandía para rescates.
- * Modela en 3D cada especie (erizo, jabalí, gaviota, conejo, gato, mochuelo, garza, paloma),
- * con animación idle (respiración, aleteo, parpadeo), halo de localización,
- * detección de proximidad para interactuar y efectos de partículas de cura.
+ * Cada especie (erizo, jabalí, gaviota, conejo, gato, mochuelo, garza, paloma)
+ * intenta cargar un modelo 3D detallado (.glb) vía GLTFLoader y se anima con un
+ * AnimationMixer (idle/aleteo/andar). Si el modelo no existe, se usa el monigote
+ * de primitivas como respaldo. Incluye halo de localización, detección de
+ * proximidad y efectos de partículas de cura.
  */
 
 export class Fauna3D {
@@ -45,27 +49,15 @@ export class Fauna3D {
 
   createAnimalMesh(speciesId, caseId, isDone) {
     const group = new THREE.Group();
-    let mesh = null;
 
-    if (speciesId === 'erizo') {
-      mesh = this.buildHedgehogMesh();
-    } else if (speciesId === 'jabali') {
-      mesh = this.buildBoarMesh();
-    } else if (speciesId === 'gavina') {
-      mesh = this.buildSeagullMesh();
-    } else if (speciesId === 'conejo') {
-      mesh = this.buildRabbitMesh();
-    } else if (speciesId === 'gato') {
-      mesh = this.buildCatMesh();
-    } else if (speciesId === 'mochuelo') {
-      mesh = this.buildOwlMesh();
-    } else if (speciesId === 'garza') {
-      mesh = this.buildHeronMesh();
-    } else {
-      mesh = this.buildPigeonMesh();
-    }
-
-    group.add(mesh);
+    // Entidad animada: intenta el modelo GLTF de la especie y, si no, usa el
+    // monigote de primitivas como respaldo (AnimationMixer gestiona el reposo).
+    const entity = new AnimatedEntity({
+      path: null, // se rellena al cargar el manifiesto de modelos
+      buildFallback: () => this.buildSpeciesFallback(speciesId),
+      motion: 'idle',
+    });
+    group.add(entity.root);
 
     // Halo luminoso pulsante de aviso si está pendiente de rescate
     let beacon = null;
@@ -88,7 +80,34 @@ export class Fauna3D {
       group.add(alertLight);
     }
 
-    return { group, mesh, beacon, speciesId };
+    // Carga asíncrona del modelo detallado de la especie (no bloqueante).
+    this._loadAnimalModel(entity, speciesId);
+
+    return { group, entity, mesh: entity.root, beacon, speciesId };
+  }
+
+  /** Devuelve el constructor del monigote de respaldo para una especie. */
+  buildSpeciesFallback(speciesId) {
+    if (speciesId === 'erizo') return this.buildHedgehogMesh();
+    if (speciesId === 'jabali') return this.buildBoarMesh();
+    if (speciesId === 'gavina') return this.buildSeagullMesh();
+    if (speciesId === 'conejo') return this.buildRabbitMesh();
+    if (speciesId === 'gato') return this.buildCatMesh();
+    if (speciesId === 'mochuelo') return this.buildOwlMesh();
+    if (speciesId === 'garza') return this.buildHeronMesh();
+    return this.buildPigeonMesh();
+  }
+
+  /** Carga el modelo GLTF del animal con sus animaciones (no bloqueante). */
+  async _loadAnimalModel(entity, speciesId) {
+    try {
+      const manifest = await loadModelsManifest();
+      const cfg = manifest?.animals?.[speciesId];
+      if (!cfg?.path) return;
+      entity.setModelSource(cfg.path, cfg.animations ?? {});
+    } catch (e) {
+      /* mantiene el monigote */
+    }
   }
 
   /* ------------------------------------------------ Modelos 3D por Especie */
@@ -304,11 +323,10 @@ export class Fauna3D {
 
   /** Actualización de animaciones de fauna por fotograma */
   update(delta, time) {
-    // Animación de respiración / flotación de animales
+    // Animación de los animales (AnimationMixer o respaldo procedural)
     for (const animal of this.activeAnimals) {
-      if (animal.mesh) {
-        const bounce = Math.sin(time * 3 + animal.group.position.x) * 0.05;
-        animal.mesh.position.y = bounce;
+      if (animal.entity) {
+        animal.entity.update(delta, time);
       }
       if (animal.beacon) {
         const scale = 1 + Math.sin(time * 4) * 0.2;

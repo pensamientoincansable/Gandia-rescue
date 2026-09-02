@@ -1,10 +1,17 @@
 import * as THREE from 'three';
 import { createSatelliteTerrainTexture, createRoadTexture, createWaterTexture } from './TextureFactory.js';
+import { GroundCollider } from './GroundCollider.js';
 
 /**
  * Generador de terrenos 3D procedurales para las 6 localizaciones de Gandía.
  * Proporciona malla de terreno con mapeo satelital, agua animada, carreteras,
  * edificios emblemáticos y función de elevación continua getHeight(x, z).
+ *
+ * Además del cálculo analítico, registra todas las mallas sólidas de la zona en
+ * un `GroundCollider` para poder hacer **raycasting vertical real** hacia el
+ * suelo y ofrecer `getGroundHeight(x, z, zoneId, fromY)`, que es la fuente de
+ * verdad para que jugador y furgoneta no atraviesen el relieve (p. ej. la
+ * montaña del Mondúver).
  */
 
 export class TerrainBuilder {
@@ -14,6 +21,10 @@ export class TerrainBuilder {
     this.scene.add(this.terrainGroup);
     this.waterMeshes = [];
     this.animatedObjects = [];
+
+    // Colisiones reales por raycasting sobre las mallas del terreno.
+    this.collider = new GroundCollider();
+    this.terrainMesh = null;
   }
 
   /** Función de altura matemática para cada zona de Gandía */
@@ -64,6 +75,37 @@ export class TerrainBuilder {
     return 0;
   }
 
+  /**
+   * Altura real del suelo en (x, z) usando **raycasting vertical** sobre la
+   * malla del terreno. Si no hay geometría registrada (entornos de test,
+   * jsdom) o el rayo no impacta, recurre a la altura analítica `getHeight`.
+   *
+   * @param {number} x
+   * @param {number} z
+   * @param {string} zoneId
+   * @param {number} [fromY] Altura desde la que partir el rayo. Debe quedar por
+   *   encima de la superficie para detectarla correctamente.
+   */
+  getGroundHeight(x, z, zoneId, fromY = 500) {
+    const raycased = this.collider.groundHeightAt(x, z, fromY);
+    if (raycased !== null) return raycased;
+    return this.getHeight(x, z, zoneId);
+  }
+
+  /** Recoge recursivamente todas las mallas sólidas del grupo de la zona. */
+  _collectSolidMeshes(root = this.terrainGroup, out = []) {
+    for (const child of root.children) {
+      if (child.isMesh && !child.userData.noCollide) out.push(child);
+      if (child.children?.length) this._collectSolidMeshes(child, out);
+    }
+    return out;
+  }
+
+  /** (Re)registra las mallas de colisión del terreno en el GroundCollider. */
+  _refreshColliders() {
+    this.collider.setMeshes(this._collectSolidMeshes());
+  }
+
   /** Construye la escena 3D completa de la zona elegida */
   buildZone(zoneId) {
     // Limpiar terreno anterior
@@ -96,6 +138,8 @@ export class TerrainBuilder {
     const terrainMesh = new THREE.Mesh(geometry, terrainMat);
     terrainMesh.receiveShadow = true;
     this.terrainGroup.add(terrainMesh);
+    // Guardamos la malla principal para colisiones por raycasting.
+    this.terrainMesh = terrainMesh;
 
     // Carreteras y sendas transitables para la furgoneta
     this.buildRoadNetwork(zoneId);
@@ -105,6 +149,9 @@ export class TerrainBuilder {
 
     // Elementos arquitectónicos y singulares de cada zona de Gandía
     this.buildZoneLandmarks(zoneId);
+
+    // Registrar todas las mallas sólidas en el colisionador por raycasting.
+    this._refreshColliders();
 
     return this.terrainGroup;
   }
@@ -492,5 +539,7 @@ export class TerrainBuilder {
     }
     this.waterMeshes = [];
     this.animatedObjects = [];
+    this.terrainMesh = null;
+    this.collider.clear();
   }
 }

@@ -78,10 +78,63 @@ export class PlayerController {
     this.state.velocity = { x: 0, y: 0, z: 0 };
   }
 
-  toggleMode() {
-    this.state.mode = this.state.mode === 'vehicle' ? 'foot' : 'vehicle';
+  /**
+   * Baja del vehículo colocando al jugador a un lado de la puerta del
+   * conductor (CORRECCIÓN del bug de teleporte a (0,0,0) o al spawn).
+   *
+   * Toma la posición global actual del vehículo (`this.state.position`),
+   * calcula un vector de separación lateral seguro (2 m) perpendicular a la
+   * dirección de marcha y sitúa al jugador en ese punto contiguo ANTES de
+   * activar sus controles y físicas a pie.
+   */
+  exitVehicle() {
+    if (this.state.mode === 'foot') return this.state.mode;
+    const s = this.state;
+    const dist = this.stats.ranger.dismountDistance ?? 2.0;
+    const side = this.stats.ranger.doorSide ?? 1; // 1 = puerta del conductor
+
+    // Dirección de marcha: fwd = (sin heading, cos heading). El vector normal
+    // (perpendicular) hacia el lado de la puerta es (cos heading, -sin heading).
+    const sinH = Math.sin(s.heading);
+    const cosH = Math.cos(s.heading);
+    const offsetX = side * dist * cosH;
+    const offsetZ = -side * dist * sinH;
+
+    // Punto contiguo a la furgoneta (no el origen ni el spawn).
+    s.position.x += offsetX;
+    s.position.z += offsetZ;
+
+    // Altura real del suelo bajo ese punto antes de reactivar las físicas.
+    const groundY = this.terrain?.getGroundHeight?.(s.position.x, s.position.z, this.zoneId, s.position.y + 2)
+      ?? this.terrain?.getHeight?.(s.position.x, s.position.z, this.zoneId)
+      ?? s.position.y;
+
+    s.mode = 'foot';
+    s.position.y = groundY;
+    s.speed = 0;
+    s.steerAngle = 0;
+    s.velocity = { x: 0, y: 0, z: 0 };
+    s.grounded = true;
+    return s.mode;
+  }
+
+  /** Vuelve a subir al vehículo. */
+  mount() {
+    if (this.state.mode !== 'foot') return this.state.mode;
+    this.state.mode = 'vehicle';
     this.state.speed = 0;
+    this.state.steerAngle = 0;
+    this.state.velocity = { x: 0, y: 0, z: 0 };
     return this.state.mode;
+  }
+
+  /** Alias explícito de "bajar de la furgoneta". */
+  dismount() {
+    return this.exitVehicle();
+  }
+
+  toggleMode() {
+    return this.state.mode === 'vehicle' ? this.exitVehicle() : this.mount();
   }
 
   /* ------------------------------------------------------------ update */
@@ -215,20 +268,37 @@ export class PlayerController {
     s.velocity.x = fx * s.speed;
     s.velocity.z = fz * s.speed;
 
-    // Salto y gravedad
-    const groundY = this.terrain?.getHeight?.(s.position.x, s.position.z, this.zoneId) ?? 0;
+    // Salto y gravedad con colisión vertical por raycasting + CCD.
+    const groundAt = (x, z, fromY = 0) => this.terrain?.getGroundHeight
+      ? this.terrain.getGroundHeight(x, z, this.zoneId, fromY)
+      : (this.terrain?.getHeight?.(x, z, this.zoneId) ?? 0);
+
+    const groundY = groundAt(s.position.x, s.position.z, s.position.y + 0.5);
     if (s.grounded && input.wasPressed('JUMP')) {
       s.velocity.y = r.jumpForce;
       s.grounded = false;
     }
     if (!s.grounded) {
-      s.velocity.y = Math.max(r.maxFallSpeed, s.velocity.y + r.gravity * delta);
-      s.position.y += s.velocity.y * delta;
-      if (s.position.y <= groundY) {
-        s.position.y = groundY;
-        s.velocity.y = 0;
-        s.grounded = true;
+      // Detección continua: sub-pasos para no atravesar superficies finas.
+      let y = s.position.y;
+      let vy = s.velocity.y;
+      let remaining = delta;
+      let landed = false;
+      while (remaining > 0 && !landed) {
+        const dt = Math.min(0.016, remaining);
+        vy = Math.max(r.maxFallSpeed, vy + r.gravity * dt);
+        const nextY = y + vy * dt;
+        const g = groundAt(s.position.x, s.position.z, y + 0.5);
+        if (nextY <= g) {
+          y = g; vy = 0; landed = true;
+        } else {
+          y = nextY;
+        }
+        remaining -= dt;
       }
+      s.position.y = y;
+      s.velocity.y = vy;
+      s.grounded = landed;
     } else {
       s.position.y = groundY;
     }
