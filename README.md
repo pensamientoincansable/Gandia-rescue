@@ -18,9 +18,13 @@ ambientado en Gandía (La Safor), con navegación 360° estilo Street View.
 - **Fotos de las zonas de rescate**: se pueden añadir fotos (archivo o cámara del móvil)
   a cada zona; se guardan reducidas en `localStorage`.
 - **Mi refugio 2.5D**: constructor estilo Animal Crossing (simplificado) con losetas
-  isométricas, profundidad por parallax y sombras. Subir de nivel en el modo rescate
-  desbloquea elementos (naranjo, charca, caja-nido, farolillo…) y atrae fauna de
-  Gandía (erizo, jabalí, mochuelo, garza…).
+  isométricas texturizadas, profundidad por parallax, cielo ambiental y sombras. Subir
+  de nivel en el modo rescate desbloquea elementos (naranjo, charca, caja-nido,
+  farolillo…) y atrae fauna de Gandía (erizo, jabalí, mochuelo, garza…).
+- **Paisajes 3D con acabado PS2**: las texturas de suelo/cielo y los árboles FBX
+  suministrados en `media/` se aplican por hábitat (costa, huerta, marjal, Serpis,
+  casco histórico y Montdúver). La vegetación se instancia y deja las carreteras,
+  caminos y pistas forestales transitables y visibles.
 - Localización completa en español, valenciano e inglés.
 - Colección educativa de fauna local que se desbloquea completando rescates.
 - Layout responsive, controles táctiles y ayudas de teclado.
@@ -109,6 +113,18 @@ retocar **sin recompilar** el juego.
 | `GameLoop.js` | Bucle principal con paso fijo que orquesta `InputManager` + `PlayerController` y delega el dibujado. |
 | `defaults.js` | Copias empaquetadas de los mismos JSON, usadas sólo como respaldo sin red (tests, jsdom). |
 
+### Arte ambiental de `media/` — `public/world/`
+
+`media/` conserva los originales entregados. Antes de compilar, `npm run assets:world`
+prepara una selección curada en `public/world/`: mapas de terreno, nubes, atlas PNG y
+los FBX de árboles/arbustos. `WorldAssets.js` resuelve esas rutas para Vite y para el
+bundle `static/` de GitHub Pages; `VegetationLibrary.js` carga los FBX con `FBXLoader`
+y los convierte en `InstancedMesh` para que el detalle visual no sacrifique rendimiento.
+
+Los grupos se colocan fuera de los ejes de carretera y del cauce: no se modifica la
+geometría ni el recorrido de las rutas existentes. Las antiguas copas cónicas usadas
+para árboles han sido sustituidas por estos modelos texturizados.
+
 ### Modelos 3D — `public/models/`
 
 Los humanos y animales se cargan con **modelos 3D `.glb`** mediante `GLTFLoader` y
@@ -165,8 +181,9 @@ sólo requiere editar el JSON correspondiente.
 
 ```bash
 npm run test:engine     # InputManager + PlayerController contra los JSON reales
-npm run test:movement   # movimiento real: conducir, bajarse, caminar y volver a subir
-npm test                # ambas suites del motor
+npm run test:movement   # conducir, bajar junto a la furgoneta, caminar y volver a subir
+npm run test:world      # texturas / FBX de media disponibles, parseables y con UVs
+npm test                # todas las suites del motor y recursos ambientales
 npm run build && npm run test:ui      # controles del HUD sobre el bundle montado
 npm run build && npm run test:smoke   # recorrido end-to-end en jsdom
 ```

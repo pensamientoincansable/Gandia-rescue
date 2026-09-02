@@ -78,9 +78,17 @@ drive(120, { handbrake: true });
 
 console.log('· Bajarse del vehículo y caminar');
 const vanPos = van.position.clone();
+const vanHeading = van.heading;
 const onFoot = van.toggleFootMode();
 expect(onFoot === true && van.isFootMode, 'F/botón: el guardián se baja de la furgoneta');
-expect(dist2D(van.rangerPosition, vanPos) < 3.5, 'aparece junto a la puerta, no en el origen');
+const expectedDoor = new THREE.Vector3(
+  vanPos.x + stats.ranger.doorSide * stats.ranger.dismountDistance * Math.cos(vanHeading),
+  0,
+  vanPos.z - stats.ranger.doorSide * stats.ranger.dismountDistance * Math.sin(vanHeading),
+);
+expect(dist2D(van.rangerPosition, expectedDoor) < 0.01, 'sale exactamente junto a la puerta en la posición actual de la furgoneta');
+expect(dist2D(van.position, vanPos) < 0.001, 'bajarse no mueve la furgoneta ni la devuelve al spawn');
+expect(dist2D(van.rangerPosition, spawn) > 5, 'el guardián conserva la zona alcanzada, no reaparece en el spawn');
 expect(van.getActivePosition() === van.rangerPosition, 'la posición activa pasa a ser la del guardián');
 
 let footFrom = van.rangerPosition.clone();

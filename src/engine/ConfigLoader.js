@@ -11,10 +11,13 @@
 export const CONFIG_BASE_URL = new URL('./', resolveBase()).href;
 
 function resolveBase() {
-  // Con Vite, `import.meta.url` apunta al módulo; los JSON se sirven desde
-  // la raíz pública (`/config/`). En builds con `base: './'` respetamos la
-  // ruta relativa del documento.
+  // El index de GitHub Pages está en la raíz del repositorio pero carga
+  // `static/app.js`; su publicDir se copia en `static/config/`. Detectamos el
+  // bundle (también cuando las pruebas lo importan desde file:) y construimos
+  // la URL HTTP desde document.baseURI, no desde una ruta local de Node.
   if (typeof document !== 'undefined' && document.baseURI) {
+    if (/\/static\//.test(import.meta.url)) return new URL('static/config/', document.baseURI);
+    // Vite dev y el build dist sirven public/config en la base del documento.
     return new URL('config/', document.baseURI);
   }
   return new URL('config/', 'http://localhost/');
