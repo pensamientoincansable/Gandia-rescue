@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { createSkyTexture } from './TextureFactory.js';
 
 /**
  * Gestor de atmósfera, iluminación y cielo para la simulación 3D de Gandía.
@@ -51,28 +52,18 @@ export class Atmosphere3D {
     const skyGeo = new THREE.SphereGeometry(240, 24, 16);
     skyGeo.scale(-1, 1, 1);
 
-    const canvas = typeof document !== 'undefined' ? document.createElement('canvas') : null;
-    const ctx = canvas && canvas.getContext ? canvas.getContext('2d') : null;
-    let texture = null;
+    // Textura de nubes real aportada en /media/image. createSkyTexture usa un
+    // DataTexture azul en entornos sin DOM, así que el render nunca queda vacío.
+    const texture = createSkyTexture('platja');
+    this.skyTexture = texture;
 
-    if (ctx) {
-      canvas.width = 128;
-      canvas.height = 256;
-      const grad = ctx.createLinearGradient(0, 0, 0, 256);
-      grad.addColorStop(0, '#1a659e');
-      grad.addColorStop(0.45, '#4895ef');
-      grad.addColorStop(0.85, '#90e0ef');
-      grad.addColorStop(1.0, '#caf0f8');
-      ctx.fillStyle = grad;
-      ctx.fillRect(0, 0, 128, 256);
-      texture = new THREE.CanvasTexture(canvas);
-    } else {
-      const data = new Uint8Array([72, 149, 239, 255]);
-      texture = new THREE.DataTexture(data, 1, 1, THREE.RGBAFormat);
-      texture.needsUpdate = true;
-    }
-
-    const skyMat = new THREE.MeshBasicMaterial({ map: texture, side: THREE.BackSide, depthWrite: false });
+    const skyMat = new THREE.MeshBasicMaterial({
+      map: texture,
+      side: THREE.BackSide,
+      depthWrite: false,
+      fog: false,
+      dithering: true,
+    });
     this.skyDome = new THREE.Mesh(skyGeo, skyMat);
     this.group.add(this.skyDome);
 
@@ -107,6 +98,16 @@ export class Atmosphere3D {
 
   setZoneAtmosphere(zoneId) {
     if (!this.scene.fog || !this.sunLight) return;
+
+    // Cada paisaje recibe su propio cielo de los assets de media; cambiar el
+    // mapa, no reconstruir la cúpula, evita parpadeos durante los viajes.
+    const nextSky = createSkyTexture(zoneId);
+    if (this.skyDome?.material && this.skyTexture !== nextSky) {
+      this.skyTexture = nextSky;
+      this.skyDome.material.map = nextSky;
+      this.skyDome.material.needsUpdate = true;
+    }
+
     if (zoneId === 'platja') {
       this.scene.fog.color.setHex(0xb5e2fa);
       this.scene.fog.density = 0.003;

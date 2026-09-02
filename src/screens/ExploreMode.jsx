@@ -180,7 +180,7 @@ export default function ExploreMode({
         isFootMode={isFootMode}
         sirenActive={sirenActive}
         headlightsActive={headlightsActive}
-        onToggleFootMode={() => setIsFootMode((v) => !v)}
+        onToggleFootMode={(nextMode) => setIsFootMode((current) => (typeof nextMode === 'boolean' ? nextMode : !current))}
         onCycleCamera={toggleCameraMode}
         onHonkReady={(fn) => { honkRef.current = fn; }}
         onToggleSiren={() => setSirenActive((v) => !v)}
@@ -272,7 +272,7 @@ export default function ExploreMode({
         cameraMode={cameraMode}
         onChangeCamera={toggleCameraMode}
         isFootMode={isFootMode}
-        onToggleFootMode={() => setIsFootMode((v) => !v)}
+        onToggleFootMode={(nextMode) => setIsFootMode((current) => (typeof nextMode === 'boolean' ? nextMode : !current))}
         onHonk={() => honkRef.current?.()}
         isMobile={isMobile}
         onVirtualInput={(inp) => setVirtualInput((prev) => ({ ...prev, ...inp }))}

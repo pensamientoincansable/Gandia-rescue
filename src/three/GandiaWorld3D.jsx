@@ -79,10 +79,17 @@ export default function GandiaWorld3D({
   const inputManagerRef = useRef(null);
   const statsRef = useRef(DEFAULT_PLAYER_STATS);
   const triggerContextInteractionRef = useRef(() => {});
-  // Las acciones puntuales se delegan al estado de React (dueño de la UI).
+  // La transición a pie debe ocurrir en RescueVan, que conserva la posición
+  // mundial real de la furgoneta. React sólo recibe el estado resultante para
+  // actualizar el HUD; nunca debe limitarse a cambiar un booleano.
+  const toggleFootModeFromInput = () => {
+    const nextMode = vanRef.current?.toggleFootMode();
+    if (typeof nextMode === 'boolean') onToggleFootMode?.(nextMode);
+    else onToggleFootMode?.();
+  };
   const actionHandlersRef = useRef({});
   actionHandlersRef.current = {
-    TOGGLE_FOOT_MODE: onToggleFootMode,
+    TOGGLE_FOOT_MODE: toggleFootModeFromInput,
     CYCLE_CAMERA: onCycleCamera,
     TOGGLE_SIREN: onToggleSiren,
     TOGGLE_HEADLIGHTS: onToggleHeadlights,
@@ -240,10 +247,11 @@ export default function GandiaWorld3D({
 
       if (now - lookEmitTimer > statsRef.current.interaction.hudEmitIntervalMs && onLookUpdate) {
         lookEmitTimer = now;
-        const headingDeg = ((van.heading * 180) / Math.PI + 360) % 360;
+        const activeHeading = van.isFootMode ? van.rangerHeading : van.heading;
+        const headingDeg = ((activeHeading * 180) / Math.PI + 360) % 360;
         onLookUpdate({
           headingDeg,
-          speedKmh: Math.round(Math.abs(van.speed) * 3.6),
+          speedKmh: Math.round((van.isFootMode ? van.rangerSpeed ?? 0 : van.speed) * 3.6),
           x: playerPos.x,
           z: playerPos.z,
           nearAnimal,
@@ -297,13 +305,20 @@ export default function GandiaWorld3D({
   }, [zoneId, loadZone]);
 
   useEffect(() => {
-    if (vanRef.current) {
-      vanRef.current.cameraMode = cameraMode;
-      vanRef.current.isFootMode = isFootMode;
-      vanRef.current.sirenActive = sirenActive;
-      vanRef.current.headlightsActive = headlightsActive;
-      vanRef.current.headlights.forEach((h) => { h.visible = headlightsActive; });
+    const van = vanRef.current;
+    if (!van) return;
+
+    van.cameraMode = cameraMode;
+    // Botones táctiles y accesibles modifican el estado React. Convertimos ese
+    // deseo en una transición física real, en vez de escribir directamente
+    // `isFootMode`: dismount() calcula la puerta junto a la furgoneta actual.
+    if (Boolean(isFootMode) !== van.isFootMode) {
+      if (isFootMode) van.dismount();
+      else van.mount();
     }
+    van.sirenActive = sirenActive;
+    van.headlightsActive = headlightsActive;
+    van.headlights.forEach((h) => { h.visible = headlightsActive; });
   }, [cameraMode, isFootMode, sirenActive, headlightsActive]);
 
   /* ------------------------------- Entrada desacoplada (InputManager) */

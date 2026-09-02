@@ -1,9 +1,14 @@
 import * as THREE from 'three';
+import { SKY_TEXTURES, TERRAIN_TEXTURES, TERRAIN_TEXTURE_SETTINGS } from './WorldAssets.js';
 
 /**
- * Generador de texturas procedurales nítidas y optimizadas para Three.js.
- * Garantiza cero dependencias de red externas y máxima calidad visual
- * en texturas de satélite, asfalto, arena, madera, adoquines y agua.
+ * Generador de texturas optimizadas para Three.js.
+ *
+ * Las bases de los paisajes ya no son sólo ruido procedural: primero usamos
+ * los mapas entregados en `media/image` y dejamos los canvas como respaldo
+ * offline para tests o navegadores que no puedan cargar imágenes. El contraste
+ * y la repetición contenidos conservan una lectura nítida, estilizada y propia
+ * de un juego de la era PS2.
  */
 
 const textureCache = new Map();
@@ -15,10 +20,40 @@ function createFallbackTexture(r = 100, g = 150, b = 130) {
   return tex;
 }
 
+/**
+ * Carga una textura de los recursos subidos al repositorio sin fijar una URL
+ * absoluta. El manifiesto resuelve cada URL para Vite, `dist` y el bundle
+ * `static/` de GitHub Pages.
+ */
+function createMediaTexture(cacheKey, url, { repeat = [1, 1], wrapT = THREE.RepeatWrapping } = {}) {
+  if (textureCache.has(cacheKey)) return textureCache.get(cacheKey);
+  if (!url || typeof document === 'undefined') return null;
+
+  try {
+    const texture = new THREE.TextureLoader().load(url, undefined, undefined, () => { /* respaldo visual: textura procedural */ });
+    texture.colorSpace = THREE.SRGBColorSpace;
+    texture.wrapS = THREE.RepeatWrapping;
+    texture.wrapT = wrapT;
+    texture.repeat.set(...repeat);
+    texture.anisotropy = 4;
+    texture.needsUpdate = true;
+    textureCache.set(cacheKey, texture);
+    return texture;
+  } catch {
+    return null;
+  }
+}
+
 /** Textura de terreno estilo satélite para cada zona de Gandía */
 export function createSatelliteTerrainTexture(zoneId) {
   const cacheKey = `sat_${zoneId}`;
   if (textureCache.has(cacheKey)) return textureCache.get(cacheKey);
+
+  // Mapas de terreno suministrados: marjal, ribera, roca, costa y suelo
+  // histórico conservan patrones reconocibles incluso desde la cámara cenital.
+  const settings = TERRAIN_TEXTURE_SETTINGS[zoneId] ?? { repeat: [1.2, 1.2] };
+  const supplied = createMediaTexture(cacheKey, TERRAIN_TEXTURES[zoneId], settings);
+  if (supplied) return supplied;
 
   const canvas = typeof document !== 'undefined' ? document.createElement('canvas') : null;
   const ctx = canvas && canvas.getContext ? canvas.getContext('2d') : null;
@@ -102,6 +137,27 @@ export function createSatelliteTerrainTexture(zoneId) {
   texture.anisotropy = 8;
   textureCache.set(cacheKey, texture);
   return texture;
+}
+
+/**
+ * Cielo de nubes a partir de los mapas de Elements entregados en /media.
+ * El mapa se repite sólo en horizontal sobre la cúpula, evitando una costura
+ * visible y conservando el degradado procedural como fallback de seguridad.
+ */
+export function createSkyTexture(zoneId = 'platja') {
+  const cacheKey = `sky_${zoneId}`;
+  if (textureCache.has(cacheKey)) return textureCache.get(cacheKey);
+  const supplied = createMediaTexture(cacheKey, SKY_TEXTURES[zoneId] ?? SKY_TEXTURES.day, {
+    repeat: [2.2, 1],
+    wrapT: THREE.ClampToEdgeWrapping,
+  });
+  if (supplied) return supplied;
+
+  const fallback = createFallbackTexture(91, 158, 220);
+  fallback.wrapS = THREE.RepeatWrapping;
+  fallback.repeat.set(2.2, 1);
+  textureCache.set(cacheKey, fallback);
+  return fallback;
 }
 
 /** Textura de carretera / asfalto con marcas viales */

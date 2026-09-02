@@ -68,8 +68,14 @@ expect(player.state.speed <= player.stats.vehicle.maxSpeed + 1e-6, 'respeta maxS
 for (let i = 0; i < 600; i += 1) player.update(1 / 60, fakeInput([]));
 expect(player.state.speed === 0, 'la fricción detiene el vehículo');
 
+const parkedVehicle = { ...player.state.vehiclePosition };
+const vehicleHeading = player.state.vehicleHeading;
 player.toggleMode();
 expect(player.state.mode === 'foot', 'cambio a modo a pie');
+const expectedDoorX = parkedVehicle.x + player.stats.ranger.doorSide * player.stats.ranger.dismountDistance * Math.cos(vehicleHeading);
+const expectedDoorZ = parkedVehicle.z - player.stats.ranger.doorSide * player.stats.ranger.dismountDistance * Math.sin(vehicleHeading);
+expect(Math.hypot(player.state.position.x - expectedDoorX, player.state.position.z - expectedDoorZ) < 1e-6, 'baja junto a la puerta en la posición actual de la furgoneta');
+expect(Math.hypot(player.state.vehiclePosition.x - parkedVehicle.x, player.state.vehiclePosition.z - parkedVehicle.z) < 1e-6, 'bajarse no desplaza la furgoneta ni la devuelve al spawn');
 player.update(1 / 60, fakeInput(['JUMP']));
 expect(!player.state.grounded, 'salto usando ranger.jumpForce');
 

@@ -4,6 +4,7 @@ import {
   GROUNDS, GRID_BIG, GRID_BIG_LEVEL, GRID_BASE, SKIES, SPECIES, SHELTER_ITEMS,
   groundUnlocked, itemUnlocked, levelForXp, levelProgress,
 } from '../lib/game.js';
+import { SHELTER_TEXTURES, SHELTER_TREE_SPRITES, VEGETATION_ASSETS } from '../three/WorldAssets.js';
 import { Toast, XpBar } from '../components/common.jsx';
 
 /* ================================================================== */
@@ -52,27 +53,39 @@ const Bebedero = () => (
   </g>
 );
 
+/* Los PNG de los FBX son atlas: la columna izquierda contiene piezas de
+   material para el modelo 3D. El viewBox toma sólo la silueta completa de la
+   derecha, evitando mostrar esa columna como un tronco suelto en el refugio. */
+const FoliageAtlas = ({ src, x, y, width, height }) => (
+  <svg
+    className="shelter-textured-foliage"
+    x={x} y={y} width={width} height={height}
+    viewBox="34 0 94 128"
+    preserveAspectRatio="xMidYMax meet"
+    overflow="hidden"
+  >
+    <image href={src} width="128" height="128" />
+  </svg>
+);
+
 const Arbusto = () => (
   <g>
-    <circle cx="-10" cy="2" r="12" fill="#5f9e56" />
-    <circle cx="10" cy="2" r="12" fill="#548f4c" />
-    <circle cx="0" cy="-8" r="13" fill="#6cab60" />
-    <circle cx="-6" cy="0" r="1.6" fill="#e2604f" />
-    <circle cx="8" cy="-4" r="1.6" fill="#e2604f" />
-    <circle cx="2" cy="6" r="1.6" fill="#e2604f" />
+    {/* Atlas PNG del arbusto y modelo FBX de media: da detalle orgánico sin
+        recurrir a círculos genéricos en el constructor del refugio. */}
+    <FoliageAtlas src={VEGETATION_ASSETS.bushFlower.textureUrl} x="-29" y="-28" width="58" height="54" />
+    <circle cx="-8" cy="-2" r="1.55" fill="#e2604f" />
+    <circle cx="8" cy="1" r="1.55" fill="#e2604f" />
   </g>
 );
 
 const Naranjo = () => (
   <g>
-    <path d="M-3 24 C-2 8 -2 0 -1 -8 L4 -8 C3 0 3 10 4 24 Z" fill="#8a5a3b" />
-    <circle cx="-10" cy="-12" r="12" fill="#5f9e56" />
-    <circle cx="12" cy="-12" r="12" fill="#548f4c" />
-    <circle cx="1" cy="-24" r="13" fill="#6cab60" />
-    <circle cx="-8" cy="-16" r="2.6" fill="#f0a13c" />
-    <circle cx="7" cy="-20" r="2.6" fill="#f0a13c" />
-    <circle cx="12" cy="-8" r="2.6" fill="#f0a13c" />
-    <circle cx="-2" cy="-6" r="2.6" fill="#f0a13c" />
+    {/* La copa texturizada mantiene el guiño de naranjo con frutos encima. */}
+    <FoliageAtlas src={VEGETATION_ASSETS.orchard.textureUrl} x="-36" y="-52" width="72" height="78" />
+    <circle cx="-10" cy="-17" r="2.6" fill="#f0a13c" />
+    <circle cx="7" cy="-22" r="2.6" fill="#f0a13c" />
+    <circle cx="12" cy="-9" r="2.6" fill="#f0a13c" />
+    <circle cx="-2" cy="-7" r="2.6" fill="#f0a13c" />
   </g>
 );
 
@@ -415,14 +428,30 @@ export default function Shelter({
   });
 
   const groundColors = GROUND_COLORS[ground] ?? GROUND_COLORS.hierba;
+  const groundTexture = SHELTER_TEXTURES.ground[ground] ?? SHELTER_TEXTURES.ground.hierba;
+  const skyTexture = SHELTER_TEXTURES.sky[sky] ?? SHELTER_TEXTURES.sky.dia;
 
   return (
     <main className={`game-screen shelter-screen screen-enter sky-${sky} ground-${ground}`}>
-      <div className="shelter-stage" ref={stageRef} onMouseMove={onStageMove}>
+      <div
+        className="shelter-stage"
+        ref={stageRef}
+        onMouseMove={onStageMove}
+        style={{ '--shelter-sky-texture': `url("${skyTexture}")` }}
+      >
         <div className="shelter-sky">
           <span className="shelter-sun" />
           {sky === 'noche' && [...Array(14)].map((_, i) => <i key={i} className="shelter-star" style={{ left: `${(i * 67) % 96}%`, top: `${(i * 37) % 55}%`, animationDelay: `${(i % 5) * 0.6}s` }} />)}
           <span className="shelter-cloud c1" /><span className="shelter-cloud c2" /><span className="shelter-cloud c3" />
+        </div>
+        {/* Árboles detallados de los atlas subidos: decoran el horizonte del
+            refugio sin ocupar casillas construibles ni repetir copas-círculo. */}
+        <div className="shelter-vegetation-backdrop" aria-hidden="true">
+          {SHELTER_TREE_SPRITES.map((src, index) => (
+            <span key={src} className={`shelter-backdrop-tree tree-${index + 1}`}>
+              <img src={src} alt="" />
+            </span>
+          ))}
         </div>
         <svg className="shelter-hills" viewBox="0 0 1200 300" preserveAspectRatio="xMidYMax slice" aria-hidden="true">
           <path d="M0 300 L0 190 C150 120 260 210 420 150 C580 92 700 190 880 140 C1020 100 1120 180 1200 150 L1200 300 Z" className="hill far" />
@@ -449,19 +478,34 @@ export default function Shelter({
             viewBox={`0 0 ${boardW} ${boardH}`}
             style={{ maxHeight: 'min(72vh, 620px)' }}
           >
+            <defs>
+              <pattern id="shelter-ground-media" patternUnits="userSpaceOnUse" width="176" height="176">
+                <rect width="176" height="176" fill={groundColors.a} />
+                <image href={groundTexture} width="176" height="176" preserveAspectRatio="xMidYMid slice" opacity="0.44" />
+              </pattern>
+            </defs>
             <g transform={`translate(${ox} ${oy})`}>
               {tiles.map(({ x, y }) => {
                 const { sx, sy } = iso(x, y);
                 const occ = occupied.has(`${x},${y}`);
                 const canBuild = !!buildItem && !removeMode && itemUnlocked(buildItem, level) && !occ;
+                const tilePath = `M${sx} ${sy - TILE_H / 2} L${sx + TILE_W / 2} ${sy} L${sx} ${sy + TILE_H / 2} L${sx - TILE_W / 2} ${sy} Z`;
                 return (
-                  <path
-                    key={`${x}-${y}`}
-                    d={`M${sx} ${sy - TILE_H / 2} L${sx + TILE_W / 2} ${sy} L${sx} ${sy + TILE_H / 2} L${sx - TILE_W / 2} ${sy} Z`}
-                    fill={(x + y) % 2 ? groundColors.a : groundColors.b}
-                    className={`shelter-tile ${canBuild ? 'is-buildable' : ''} ${removeMode && occ ? 'is-removable' : ''}`}
-                    onClick={() => place(x, y)}
-                  />
+                  <g key={`${x}-${y}`}>
+                    <path
+                      d={tilePath}
+                      fill={(x + y) % 2 ? groundColors.a : groundColors.b}
+                      className={`shelter-tile ${canBuild ? 'is-buildable' : ''} ${removeMode && occ ? 'is-removable' : ''}`}
+                      onClick={() => place(x, y)}
+                    />
+                    <path
+                      d={tilePath}
+                      className="shelter-tile-texture"
+                      fill="url(#shelter-ground-media)"
+                      opacity={(x + y) % 2 ? 0.34 : 0.4}
+                      pointerEvents="none"
+                    />
+                  </g>
                 );
               })}
               {sortedItems.map((p) => {

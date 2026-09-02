@@ -39,7 +39,11 @@ export class PlayerController {
     /** Estado observable por la capa de render / HUD. */
     this.state = {
       mode: 'vehicle',            // 'vehicle' | 'foot'
+      // `position` siempre es la posición del actor activo para conservar la
+      // API de render. La furgoneta se guarda aparte cuando el guardián baja.
       position: { x: 0, y: 0, z: 0 },
+      vehiclePosition: { x: 0, y: 0, z: 0 },
+      vehicleHeading: 0,
       velocity: { x: 0, y: 0, z: 0 },
       heading: 0,
       pitch: 0,
@@ -71,46 +75,54 @@ export class PlayerController {
 
   setPosition(x, z, heading = 0) {
     const y = this.terrain?.getHeight?.(x, z, this.zoneId) ?? 0;
+    const isDriving = this.state.mode === 'vehicle';
     Object.assign(this.state.position, { x, y, z });
+    // Reposicionar al vehículo mientras se conduce debe sincronizar ambos
+    // estados. Si se usa para recolocar al guardián a pie, la furgoneta sigue
+    // correctamente estacionada donde se dejó.
+    if (isDriving) {
+      Object.assign(this.state.vehiclePosition, { x, y, z });
+      this.state.vehicleHeading = heading;
+    }
     this.state.heading = heading;
     this.state.speed = 0;
     this.state.steerAngle = 0;
     this.state.velocity = { x: 0, y: 0, z: 0 };
+    this.state.grounded = true;
   }
 
   /**
    * Baja del vehículo colocando al jugador a un lado de la puerta del
-   * conductor (CORRECCIÓN del bug de teleporte a (0,0,0) o al spawn).
+   * conductor, sin mover la furgoneta ni volver al punto de aparición.
    *
-   * Toma la posición global actual del vehículo (`this.state.position`),
-   * calcula un vector de separación lateral seguro (2 m) perpendicular a la
-   * dirección de marcha y sitúa al jugador en ese punto contiguo ANTES de
-   * activar sus controles y físicas a pie.
+   * `position` pasa a representar al guardián porque es el actor activo, pero
+   * `vehiclePosition` mantiene la coordenada exacta en la que se estacionó la
+   * furgoneta. Esto evita tanto el teletransporte al spawn como que el propio
+   * vehículo se desplace lateralmente al bajar.
    */
   exitVehicle() {
     if (this.state.mode === 'foot') return this.state.mode;
     const s = this.state;
+    const vehicle = s.vehiclePosition;
+    const heading = s.vehicleHeading;
     const dist = this.stats.ranger.dismountDistance ?? 2.0;
     const side = this.stats.ranger.doorSide ?? 1; // 1 = puerta del conductor
 
     // Dirección de marcha: fwd = (sin heading, cos heading). El vector normal
     // (perpendicular) hacia el lado de la puerta es (cos heading, -sin heading).
-    const sinH = Math.sin(s.heading);
-    const cosH = Math.cos(s.heading);
-    const offsetX = side * dist * cosH;
-    const offsetZ = -side * dist * sinH;
+    const sinH = Math.sin(heading);
+    const cosH = Math.cos(heading);
+    const x = vehicle.x + side * dist * cosH;
+    const z = vehicle.z - side * dist * sinH;
 
-    // Punto contiguo a la furgoneta (no el origen ni el spawn).
-    s.position.x += offsetX;
-    s.position.z += offsetZ;
-
-    // Altura real del suelo bajo ese punto antes de reactivar las físicas.
-    const groundY = this.terrain?.getGroundHeight?.(s.position.x, s.position.z, this.zoneId, s.position.y + 2)
-      ?? this.terrain?.getHeight?.(s.position.x, s.position.z, this.zoneId)
-      ?? s.position.y;
+    // Altura real del suelo bajo la puerta antes de reactivar las físicas.
+    const groundY = this.terrain?.getGroundHeight?.(x, z, this.zoneId, vehicle.y + 2)
+      ?? this.terrain?.getHeight?.(x, z, this.zoneId)
+      ?? vehicle.y;
 
     s.mode = 'foot';
-    s.position.y = groundY;
+    Object.assign(s.position, { x, y: groundY, z });
+    s.heading = heading;
     s.speed = 0;
     s.steerAngle = 0;
     s.velocity = { x: 0, y: 0, z: 0 };
@@ -118,14 +130,23 @@ export class PlayerController {
     return s.mode;
   }
 
-  /** Vuelve a subir al vehículo. */
+  /** Vuelve a subir al vehículo estacionado y recupera su orientación. */
   mount() {
     if (this.state.mode !== 'foot') return this.state.mode;
-    this.state.mode = 'vehicle';
-    this.state.speed = 0;
-    this.state.steerAngle = 0;
-    this.state.velocity = { x: 0, y: 0, z: 0 };
-    return this.state.mode;
+    const s = this.state;
+    s.mode = 'vehicle';
+    Object.assign(s.position, s.vehiclePosition);
+    s.heading = s.vehicleHeading;
+    s.speed = 0;
+    s.steerAngle = 0;
+    s.velocity = { x: 0, y: 0, z: 0 };
+    s.grounded = true;
+    return s.mode;
+  }
+
+  /** Posición persistente de la furgoneta, útil para renderizadores externos. */
+  getVehiclePosition() {
+    return this.state.vehiclePosition;
   }
 
   /** Alias explícito de "bajar de la furgoneta". */
@@ -216,6 +237,10 @@ export class PlayerController {
     s.velocity.z = fz * s.speed;
 
     this._settleOnTerrain(delta, v, fx, fz);
+    // Mientras se conduce, la posición activa y la posición estacionada son
+    // la misma; al bajar se separan deliberadamente.
+    Object.assign(s.vehiclePosition, s.position);
+    s.vehicleHeading = s.heading;
   }
 
   _settleOnTerrain(delta, v, fx, fz) {

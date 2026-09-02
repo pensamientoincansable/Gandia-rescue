@@ -24,12 +24,29 @@ export function getGLTFLoader() {
   return _loader;
 }
 
-/** Devuelve la base del documento para rutas relativas (dev + GitHub Pages). */
+/**
+ * Base de recursos para desarrollo, dist y la copia `static/` de GitHub Pages.
+ * En Pages el documento sigue en la raíz mientras los modelos están en
+ * `static/models`; `import.meta.url` permite reconocer esa variante incluso
+ * si una prueba importa el bundle como file:.
+ */
 function resolveBase() {
   if (typeof document !== 'undefined' && document.baseURI) {
-    return new URL('./', document.baseURI).href;
+    return /\/static\//.test(import.meta.url)
+      ? new URL('static/', document.baseURI).href
+      : new URL('./', document.baseURI).href;
   }
   return './';
+}
+
+function configUrl() {
+  if (typeof document !== 'undefined' && document.baseURI) {
+    const base = /\/static\//.test(import.meta.url)
+      ? new URL('static/', document.baseURI)
+      : new URL('./', document.baseURI);
+    return new URL('config/models.json', base).href;
+  }
+  return 'config/models.json';
 }
 
 /** Convierte una ruta de modelo en una URL usable por GLTFLoader. */
@@ -100,8 +117,7 @@ export async function loadModelsManifest() {
   if (_manifest) return _manifest;
   const defaults = DEFAULT_MODELS;
   try {
-    const url = new URL('config/models.json', resolveBase()).href;
-    const res = await fetch(url, { cache: 'no-store' });
+    const res = await fetch(configUrl(), { cache: 'no-store' });
     if (!res.ok) {
       _manifest = defaults;
       return _manifest;

@@ -56,7 +56,7 @@ const dom = new JSDOM('<!doctype html><html lang="es"><body><div id="root"></div
   pretendToBeVisual: true,
 });
 const { window } = dom;
-for (const key of ['window', 'document', 'navigator', 'FileReader', 'HTMLElement', 'getComputedStyle', 'requestAnimationFrame', 'cancelAnimationFrame']) {
+for (const key of ['window', 'document', 'navigator', 'FileReader', 'HTMLElement', 'getComputedStyle', 'requestAnimationFrame', 'cancelAnimationFrame', 'ProgressEvent']) {
   Object.defineProperty(globalThis, key, { value: window[key] ?? window.document, configurable: true });
 }
 Object.defineProperty(globalThis, 'document', { value: window.document, configurable: true });

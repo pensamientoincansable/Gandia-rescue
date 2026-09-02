@@ -876,20 +876,25 @@ kbd { min-width: 18px; height: 18px; display: grid; place-items: center; border:
 .shelter-screen { position: absolute; inset: 0; overflow: hidden; }
 .shelter-stage { position: absolute; inset: 0; --px: 0; --py: 0; }
 
-.shelter-stage .shelter-sky { position: absolute; inset: 0; transition: background 1s ease; }
+/* Los mapas de cielo del paquete media se mezclan con el color de cada hora:
+   textura tangible, pero paleta controlada y legible de aventura PS2. */
+.shelter-stage .shelter-sky { position: absolute; z-index: 0; inset: 0; overflow: hidden; transition: background 1s ease; }
+.shelter-stage .shelter-sky::after { content: ''; position: absolute; z-index: 0; inset: 0; pointer-events: none; background-image: linear-gradient(180deg, rgba(28,103,190,.18), rgba(231,246,218,.12)), var(--shelter-sky-texture); background-size: cover; background-position: center 36%; mix-blend-mode: soft-light; opacity: .72; }
 .sky-dia .shelter-sky { background: linear-gradient(180deg, #8fd0ec 0%, #b8e4f2 38%, #e8f5d8 78%, #d8eec4 100%); }
 .sky-atardecer .shelter-sky { background: linear-gradient(180deg, #5b3b76 0%, #b45a7c 34%, #f0875e 62%, #ffc27a 86%, #ffd9a1 100%); }
+.sky-atardecer .shelter-sky::after { background-image: linear-gradient(180deg, rgba(108,39,99,.44), rgba(255,154,89,.18)), var(--shelter-sky-texture); mix-blend-mode: screen; opacity: .48; }
 .sky-noche .shelter-sky { background: linear-gradient(180deg, #101a33 0%, #1d2c50 52%, #2c3d63 80%, #3a4a6e 100%); }
+.sky-noche .shelter-sky::after { background-image: linear-gradient(180deg, rgba(5,11,30,.72), rgba(31,53,92,.42)), var(--shelter-sky-texture); mix-blend-mode: screen; opacity: .24; }
 
-.shelter-sun { position: absolute; left: 22%; top: 12%; width: 74px; height: 74px; border-radius: 50%; background: radial-gradient(circle, #fff7dc 18%, #ffe9a8 42%, rgba(255,220,130,0) 72%); animation: sunPulse 6s ease-in-out infinite alternate; }
+.shelter-sun { position: absolute; z-index: 1; left: 22%; top: 12%; width: 74px; height: 74px; border-radius: 50%; background: radial-gradient(circle, #fff7dc 18%, #ffe9a8 42%, rgba(255,220,130,0) 72%); animation: sunPulse 6s ease-in-out infinite alternate; }
 @keyframes sunPulse { to { transform: scale(1.12); } }
 .sky-atardecer .shelter-sun { left: 64%; top: 34%; background: radial-gradient(circle, #fff1c4 12%, #ffb26b 40%, rgba(255,140,90,0) 70%); }
 .sky-noche .shelter-sun { left: 74%; top: 10%; width: 46px; height: 46px; background: radial-gradient(circle, #f4f8ff 22%, #c9d6f2 48%, rgba(160,180,230,0) 72%); }
-.shelter-star { position: absolute; width: 2.4px; height: 2.4px; border-radius: 50%; background: #eaf2ff; opacity: .8; animation: starTwinkle 3s ease-in-out infinite alternate; }
+.shelter-star { position: absolute; z-index: 1; width: 2.4px; height: 2.4px; border-radius: 50%; background: #eaf2ff; opacity: .8; animation: starTwinkle 3s ease-in-out infinite alternate; }
 .sky-dia .shelter-star, .sky-atardecer .shelter-star { display: none; }
 @keyframes starTwinkle { from { opacity: .25; } to { opacity: .95; } }
 
-.shelter-cloud { position: absolute; width: 120px; height: 34px; border-radius: 40px; background: rgba(255,255,255,.85); filter: blur(1px); animation: cloudDrift 46s linear infinite; }
+.shelter-cloud { position: absolute; z-index: 1; width: 120px; height: 34px; border-radius: 40px; background: rgba(255,255,255,.85); filter: blur(1px); animation: cloudDrift 46s linear infinite; }
 .shelter-cloud::before { content: ''; position: absolute; top: -16px; left: 22px; width: 46px; height: 46px; border-radius: 50%; background: inherit; }
 .shelter-cloud::after { content: ''; position: absolute; top: -9px; left: 58px; width: 34px; height: 34px; border-radius: 50%; background: inherit; }
 .shelter-cloud.c1 { top: 13%; animation-delay: -8s; }
@@ -899,7 +904,20 @@ kbd { min-width: 18px; height: 18px; display: grid; place-items: center; border:
 .sky-atardecer .shelter-cloud { background: rgba(255,214,180,.75); }
 @keyframes cloudDrift { from { left: -16%; } to { left: 108%; } }
 
-.shelter-hills { position: absolute; left: -3%; right: -3%; bottom: 8%; width: 106%; height: 34%; transform: translate(calc(var(--px) * -12px), calc(var(--py) * -4px)); transition: transform .12s linear; }
+.shelter-vegetation-backdrop { position: absolute; z-index: 1; inset: 14% 0 8%; pointer-events: none; overflow: hidden; opacity: .78; filter: saturate(.88) contrast(1.08); }
+/* Los atlas de árboles reservan 34 px de su lado izquierdo para piezas de
+   tronco que sólo usa el FBX. El contenedor recorta esa franja y conserva la
+   silueta completa de 94 × 128 px para el horizonte 2.5D. */
+.shelter-backdrop-tree { position: absolute; bottom: -2%; width: clamp(130px, 16vw, 250px); aspect-ratio: 94 / 128; overflow: hidden; transform-origin: center bottom; filter: drop-shadow(0 14px 8px rgba(20,49,26,.18)); }
+.shelter-backdrop-tree img { position: absolute; bottom: 0; left: 0; display: block; width: 136.17%; max-width: none; height: auto; transform: translateX(-26.5625%); }
+.shelter-backdrop-tree.tree-1 { left: 3%; transform: scale(1.06); }
+.shelter-backdrop-tree.tree-2 { left: 20%; bottom: -5%; transform: scale(.82) scaleX(-1); opacity: .82; }
+.shelter-backdrop-tree.tree-3 { right: 18%; bottom: -6%; transform: scale(.9); opacity: .9; }
+.shelter-backdrop-tree.tree-4 { right: 1%; transform: scale(1.14) scaleX(-1); }
+.sky-atardecer .shelter-vegetation-backdrop { filter: sepia(.32) saturate(1.18) hue-rotate(326deg) contrast(1.08); }
+.sky-noche .shelter-vegetation-backdrop { opacity: .29; filter: brightness(.42) saturate(.72); }
+
+.shelter-hills { position: absolute; z-index: 2; left: -3%; right: -3%; bottom: 8%; width: 106%; height: 34%; transform: translate(calc(var(--px) * -12px), calc(var(--py) * -4px)); transition: transform .12s linear; }
 .shelter-hills .hill.far { fill: #a8cf8e; opacity: .8; }
 .shelter-hills .hill.near { fill: #7fb56a; }
 .sky-atardecer .shelter-hills .hill.far { fill: #b47a8e; }
@@ -913,9 +931,10 @@ kbd { min-width: 18px; height: 18px; display: grid; place-items: center; border:
 .sky-noche .shelter-hills .hill-houses path { fill: #2c3750; }
 .shelter-hills .hill-lights rect { fill: #ffd98a; animation: blink 2.4s ease infinite alternate; }
 
-.shelter-board-tilt { position: absolute; inset: 0; display: grid; place-items: center; padding: 90px 16px 24px; perspective: 1300px; }
+.shelter-board-tilt { position: absolute; z-index: 3; inset: 0; display: grid; place-items: center; padding: 90px 16px 24px; perspective: 1300px; }
 .shelter-board { width: min(94vw, 900px); max-height: 100%; transform: rotateX(calc(7deg + var(--py) * 2.4deg)) rotateZ(calc(var(--px) * -1.6deg)) translate(calc(var(--px) * 8px), 0); transition: transform .12s linear; filter: drop-shadow(0 26px 30px rgba(20,40,30,.3)); }
-.shelter-tile { stroke: rgba(60,90,50,.14); stroke-width: 1; }
+.shelter-tile { stroke: rgba(60,90,50,.22); stroke-width: 1; }
+.shelter-tile-texture { mix-blend-mode: multiply; }
 .shelter-tile.is-buildable { cursor: pointer; }
 .shelter-tile.is-buildable:hover { stroke: var(--orange); stroke-width: 2.4; fill: #c2e29a; filter: brightness(1.06); }
 .sky-noche .shelter-tile.is-buildable:hover { fill: #9fc47e; }
@@ -925,6 +944,7 @@ kbd { min-width: 18px; height: 18px; display: grid; place-items: center; border:
 .shelter-tile.is-removable:hover { stroke: #e2604f; stroke-width: 2.4; }
 
 .shelter-item { transition: opacity .2s ease; }
+.shelter-textured-foliage { image-rendering: auto; filter: drop-shadow(0 3px 2px rgba(24,46,22,.24)); }
 .shelter-item.is-removable { cursor: pointer; }
 .shelter-item.is-removable:hover { opacity: .55; }
 .shelter-animal { transition: transform 1.3s cubic-bezier(.45,.08,.35,1); pointer-events: none; animation: animalBob 2.6s ease-in-out infinite; }

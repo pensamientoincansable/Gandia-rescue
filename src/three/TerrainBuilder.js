@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { createSatelliteTerrainTexture, createRoadTexture, createWaterTexture } from './TextureFactory.js';
+import { TERRAIN_TEXTURE_SETTINGS } from './WorldAssets.js';
 import { GroundCollider } from './GroundCollider.js';
 
 /**
@@ -126,13 +127,21 @@ export class TerrainBuilder {
     geometry.computeVertexNormals();
 
     const satTexture = createSatelliteTerrainTexture(zoneId);
-    satTexture.repeat.set(1, 1);
+    const terrainStyle = TERRAIN_TEXTURE_SETTINGS[zoneId] ?? { repeat: [1.2, 1.2], tint: 0xffffff };
+    satTexture.repeat.set(...terrainStyle.repeat);
 
+    // El mismo mapa funciona como relieve suave: realza la lectura de tierra,
+    // cultivos y roca sin necesitar normal maps externos y mantiene el acabado
+    // directo, ligeramente facetado, de una aventura PS2.
     const terrainMat = new THREE.MeshStandardMaterial({
       map: satTexture,
-      roughness: 0.85,
-      metalness: 0.08,
-      flatShading: zoneId === 'montduver',
+      bumpMap: satTexture,
+      bumpScale: zoneId === 'montduver' ? 0.42 : 0.18,
+      color: terrainStyle.tint,
+      roughness: 0.9,
+      metalness: 0.02,
+      flatShading: zoneId === 'montduver' || zoneId === 'marjal',
+      dithering: true,
     });
 
     const terrainMesh = new THREE.Mesh(geometry, terrainMat);
