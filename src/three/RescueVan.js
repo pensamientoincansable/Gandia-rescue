@@ -1,6 +1,8 @@
 import * as THREE from 'three';
 import { createRescueVanDecal } from './TextureFactory.js';
 import { DEFAULT_PLAYER_STATS } from '../engine/defaults.js';
+import { AnimatedEntity } from './AnimatedEntity.js';
+import { loadModelsManifest } from './ModelLoader.js';
 
 /**
  * Furgoneta 3D de Rescate y Conservación de Gandía.
@@ -51,8 +53,20 @@ export class RescueVan {
     this.headlightsActive = true;
     this.cameraMode = this.cameraCfg.modes?.[0] ?? 'chase'; // 'chase' | 'hood' | 'top' | 'foot'
     this.isFootMode = false;
+    this.zoneId = 'platja';
     this.rangerPosition = new THREE.Vector3(0, 0, 0);
     this.rangerHeading = 0;
+
+    // Física vertical del guardián (salto / gravedad / colisión).
+    this.rangerVy = 0;
+    this.rangerGrounded = true;
+
+    // Avatar del guardián a pie (modelo detallado con AnimationMixer, o monigote).
+    this.rangerGroup = new THREE.Group();
+    this.rangerGroup.visible = false;
+    this.scene.add(this.rangerGroup);
+    this.rangerAvatar = null;
+    this._initRangerAvatar();
 
     // Mallas y piezas móviles
     this.wheels = [];
@@ -227,6 +241,56 @@ export class RescueVan {
     }
   }
 
+  /** Crea el avatar a pie del jugador usando el manifiesto de modelos. */
+  _initRangerAvatar() {
+    // Monigote de respaldo mientras no haya un .glb del guardián.
+    const fallback = this.buildRangerFallbackMesh();
+    this.rangerAvatar = new AnimatedEntity({
+      path: null,
+      buildFallback: () => fallback,
+      motion: 'idle',
+      scale: 1,
+    });
+    this.rangerGroup.add(this.rangerAvatar.root);
+
+    // Intenta cargar el modelo 3D detallado con sus animaciones (asíncrono).
+    loadModelsManifest().then((manifest) => {
+      const cfg = manifest?.ranger;
+      if (!cfg?.path) return;
+      this.rangerAvatar = new AnimatedEntity({
+        path: cfg.path,
+        animations: cfg.animations ?? {},
+        motion: 'idle',
+        scale: 1,
+      });
+      this.rangerGroup.clear();
+      this.rangerGroup.add(this.rangerAvatar.root);
+    }).catch(() => { /* mantiene el monigote */ });
+  }
+
+  /** Humanoid simple de primitivas usado si no hay modelo GLTF. */
+  buildRangerFallbackMesh() {
+    const group = new THREE.Group();
+    const rangerMat = new THREE.MeshStandardMaterial({ color: 0x00a88f, roughness: 0.6 });
+    const skinMat = new THREE.MeshStandardMaterial({ color: 0xf5cba7, roughness: 0.6 });
+    const pantsMat = new THREE.MeshStandardMaterial({ color: 0x1f2421, roughness: 0.8 });
+
+    const torso = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.7, 0.3), rangerMat);
+    torso.position.y = 1.15;
+    group.add(torso);
+
+    const head = new THREE.Mesh(new THREE.SphereGeometry(0.22, 8, 8), skinMat);
+    head.position.y = 1.72;
+    group.add(head);
+
+    for (const lx of [-0.17, 0.17]) {
+      const leg = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.72, 0.24), pantsMat);
+      leg.position.set(lx, 0.44, 0);
+      group.add(leg);
+    }
+    return group;
+  }
+
   createWheelMesh() {
     const group = new THREE.Group();
     const tireMat = new THREE.MeshStandardMaterial({ color: 0x1f2421, roughness: 0.9 });
@@ -315,21 +379,99 @@ export class RescueVan {
     for (const h of this.headlights) h.visible = this.headlightsActive;
   }
 
-  /** Alterna entre conducir la furgoneta y bajarse a pie */
-  toggleFootMode() {
-    this.isFootMode = !this.isFootMode;
-    if (this.isFootMode) {
-      // Posicionar al guardián junto a la puerta de la furgoneta
-      const offset = new THREE.Vector3(2.2, 0, 0).applyAxisAngle(new THREE.Vector3(0, 1, 0), this.heading);
-      this.rangerPosition.copy(this.position).add(offset);
-      this.rangerHeading = this.heading;
-      this.speed = 0;
-    }
+  /**
+   * Baja al guardián de la furgoneta.
+   *
+   * CORRECCIÓN DEL BUG de teleporte: ya NO partimos de (0,0,0) ni del spawn.
+   * Tomamos la posición global ACTUAL de la furgoneta (`this.position`),
+   * calculamos un vector de separación lateral seguro (2 m hacia el lado de la
+   * puerta del conductor, perpendicular a la dirección de marcha) e igualamos
+   * las coordenadas del jugador a ese punto contiguo ANTES de reactivar sus
+   * controles y físicas. También fijamos la altura al suelo real bajo ese punto.
+   */
+  dismount() {
+    if (this.isFootMode) return this.isFootMode;
+
+    // Distancia lateral de separación y lado de la puerta del conductor.
+    const dist = this.rangerCfg.dismountDistance ?? 2.0;
+    const side = this.rangerCfg.doorSide ?? 1; // 1 = puerta del conductor
+
+    // Vector perpendicular a la dirección de marcha (heading) hacia la puerta.
+    const lateral = new THREE.Vector3(side * dist, 0, 0)
+      .applyAxisAngle(new THREE.Vector3(0, 1, 0), this.heading);
+
+    // Punto contiguo a la furgoneta, NO el origen del mundo ni el spawn.
+    this.rangerPosition.copy(this.position).add(lateral);
+
+    // Altura real del suelo en ese punto (raycast con respaldo analítico).
+    this.rangerPosition.y = this.terrain.getGroundHeight
+      ? this.terrain.getGroundHeight(this.rangerPosition.x, this.rangerPosition.z, this.zoneId, this.position.y + 2)
+      : this.terrain.getHeight(this.rangerPosition.x, this.rangerPosition.z, this.zoneId);
+
+    // Reactivar controles/físicas del guardián con el estado bien inicializado.
+    this.rangerHeading = this.heading;
+    this.rangerVy = 0;
+    this.rangerGrounded = true;
+    this.speed = 0;
+    this.steerAngle = 0;
+    this.isFootMode = true;
+
+    // Mostrar el avatar del jugador a pie.
+    this.rangerGroup.visible = true;
+    this._syncRangerAvatar();
     return this.isFootMode;
+  }
+
+  /** Vuelve a subir al guardián a la furgoneta (a la posición del vehículo). */
+  mount() {
+    if (!this.isFootMode) return this.isFootMode;
+    this.isFootMode = false;
+    this.rangerPosition.copy(this.position);
+    this.rangerVy = 0;
+    this.speed = 0;
+    this.steerAngle = 0;
+    this.rangerGroup.visible = false;
+    return this.isFootMode;
+  }
+
+  /** Alias explícito de "bajar de la furgoneta". */
+  exitVehicle() {
+    return this.dismount();
+  }
+
+  /** Alterna entre conducir la furgoneta y bajarse a pie. */
+  toggleFootMode() {
+    return this.isFootMode ? this.mount() : this.dismount();
+  }
+
+  /** Sincroniza posición/rotación del avatar con el guardián. */
+  _syncRangerAvatar() {
+    if (!this.rangerAvatar) return;
+    this.rangerAvatar.setTransform(
+      this.rangerPosition.x,
+      this.rangerPosition.y,
+      this.rangerPosition.z,
+      this.rangerHeading
+    );
+  }
+
+  /** Aplica la animación del avatar según el estado de movimiento. */
+  _animateRanger(time) {
+    if (!this.rangerAvatar || !this.rangerGroup.visible) return;
+    if (!this.rangerGrounded) {
+      this.rangerAvatar.setMotion('jump');
+    } else if (this.rangerMoving) {
+      const sprinting = this.rangerSprinting;
+      this.rangerAvatar.setMotion(sprinting ? 'run' : 'walk');
+    } else {
+      this.rangerAvatar.setMotion('idle');
+    }
+    this.rangerAvatar.update(1 / 60, time);
   }
 
   /** Posiciona la furgoneta en un punto de la zona */
   setPosition(x, z, heading = 0, zoneId = 'platja') {
+    this.zoneId = zoneId;
     this.position.set(x, this.terrain.getHeight(x, z, zoneId), z);
     this.heading = heading;
     this.speed = 0;
@@ -341,13 +483,15 @@ export class RescueVan {
     // bajarse a pie aparece junto al vehículo y no en el origen del mundo.
     this.rangerPosition.copy(this.position);
     this.rangerHeading = heading;
+    this._syncRangerAvatar();
   }
 
   /** Actualización de la física de conducción por fotograma */
   update(delta, input, zoneId, time) {
+    this.zoneId = zoneId;
     // Si estamos a pie, actualizamos el desplazamiento del guardián
     if (this.isFootMode) {
-      this.updateRangerFoot(delta, input, zoneId);
+      this.updateRangerFoot(delta, input, zoneId, time);
       this.updateSirens(time);
       return;
     }
@@ -411,9 +555,15 @@ export class RescueVan {
     this.position.x = Math.max(boundsMin, Math.min(boundsMax, this.position.x));
     this.position.z = Math.max(boundsMin, Math.min(boundsMax, this.position.z));
 
-    // Ajuste a la altura del terreno con suavizado de amortiguación
-    const groundY = this.terrain.getHeight(this.position.x, this.position.z, zoneId);
+    // Ajuste a la altura del terreno con suavizado de amortiguación.
+    // Usamos el raycasting vertical real (getGroundHeight) y, como medida de
+    // seguridad, NUNCA dejamos que la furgoneta quede por debajo de la
+    // superficie: se pinza a la altura del suelo si la amortiguación no llega.
+    const groundY = this.terrain.getGroundHeight
+      ? this.terrain.getGroundHeight(this.position.x, this.position.z, zoneId, this.position.y + 0.5)
+      : this.terrain.getHeight(this.position.x, this.position.z, zoneId);
     this.position.y += (groundY - this.position.y) * Math.min(1, delta * this.cfg.suspensionLerpSpeed);
+    if (this.position.y < groundY - 0.05) this.position.y = groundY;
 
     // Inclinación de cabeceo y alabeo según la pendiente del terreno
     const pitchDist = this.cfg.pitchSampleDistance;
@@ -452,8 +602,10 @@ export class RescueVan {
   }
 
   /** Actualización del movimiento del guardián a pie */
-  updateRangerFoot(delta, input, zoneId) {
-    const walkSpeed = input.handbrake ? this.rangerCfg.sprintSpeed : this.rangerCfg.walkSpeed;
+  updateRangerFoot(delta, input, zoneId, time) {
+    const cfg = this.rangerCfg;
+    const walkSpeed = input.handbrake ? cfg.sprintSpeed : cfg.walkSpeed;
+
     let forward = 0;
     if (input.forward) forward += 1;
     if (input.backward) forward -= 1;
@@ -461,17 +613,83 @@ export class RescueVan {
     if (input.left) turn += 1;
     if (input.right) turn -= 1;
 
-    this.rangerHeading += turn * this.rangerCfg.turnSpeed * delta;
+    this.rangerHeading += turn * cfg.turnSpeed * delta;
 
-    if (forward !== 0) {
+    const moving = forward !== 0;
+    if (moving) {
       this.rangerPosition.x += Math.sin(this.rangerHeading) * forward * walkSpeed * delta;
       this.rangerPosition.z += Math.cos(this.rangerHeading) * forward * walkSpeed * delta;
     }
 
+    // Límites del mundo
     const { boundsMin: rMin, boundsMax: rMax } = this.worldCfg;
     this.rangerPosition.x = Math.max(rMin, Math.min(rMax, this.rangerPosition.x));
     this.rangerPosition.z = Math.max(rMin, Math.min(rMax, this.rangerPosition.z));
-    this.rangerPosition.y = this.terrain.getHeight(this.rangerPosition.x, this.rangerPosition.z, zoneId);
+
+    // ---------- Colisión vertical: raycasting + CCD ----------
+    // Salto (flanco de entrada) sólo si estamos sobre el suelo.
+    if (input.jump && this.rangerGrounded) {
+      this.rangerVy = cfg.jumpForce;
+      this.rangerGrounded = false;
+    }
+
+    // Resolvemos la altura real del suelo con raycast vertical (con respaldo
+    // analítico) para NUNCA caer por debajo de la superficie.
+    const groundResolver = (x, z, fromY) =>
+      this.terrain.getGroundHeight
+        ? this.terrain.getGroundHeight(x, z, zoneId, fromY)
+        : this.terrain.getHeight(x, z, zoneId);
+
+    if (this.rangerGrounded) {
+      // Pie en el suelo: fijamos a la altura real del terreno (anti hundimiento).
+      this.rangerPosition.y = groundResolver(this.rangerPosition.x, this.rangerPosition.z, this.rangerPosition.y + 0.5);
+    } else {
+      // Caída/salto con Detección Continua de Colisiones para evitar tunneling.
+      const result = this.terrain.collider?.integrateVertical
+        ? this.terrain.collider.integrateVertical(
+            { x: this.rangerPosition.x, z: this.rangerPosition.z },
+            this.rangerPosition.y,
+            this.rangerVy,
+            delta,
+            { gravity: cfg.gravity, maxFallSpeed: cfg.maxFallSpeed },
+            groundResolver
+          )
+        : this._integrateVerticalFallback(
+            { x: this.rangerPosition.x, z: this.rangerPosition.z },
+            this.rangerPosition.y,
+            this.rangerVy,
+            delta,
+            cfg,
+            groundResolver
+          );
+      this.rangerPosition.y = result.y;
+      this.rangerVy = result.vy;
+      this.rangerGrounded = result.grounded;
+    }
+
+    // Velocidad del guardián (independiente de la furgoneta, que permanece 0
+    // mientras vamos a pie). Se usa para animaciones y el HUD a pie.
+    this.rangerSpeed = moving ? Math.abs(forward) * (input.handbrake ? cfg.sprintSpeed : cfg.walkSpeed) : 0;
+    this.speed = 0;
+    this.rangerSprinting = !!input.handbrake && moving;
+    this.rangerMoving = moving;
+
+    // Posicionar y animar el avatar a pie.
+    this._syncRangerAvatar();
+    this._animateRanger(time);
+  }
+
+  /** Respaldo de integración vertical (cuando no hay GroundCollider disponible). */
+  _integrateVerticalFallback(posXZ, y, vy, delta, cfg, groundResolver) {
+    let currentY = y;
+    let currentVy = vy;
+    currentVy = Math.max(cfg.maxFallSpeed, currentVy + cfg.gravity * delta);
+    currentY += currentVy * delta;
+    const ground = groundResolver(posXZ.x, posXZ.z, currentY + 0.5);
+    if (currentY <= ground) {
+      return { y: ground, vy: 0, grounded: true };
+    }
+    return { y: currentY, vy: currentVy, grounded: false };
   }
 
   /** Efecto pulsante de las luces de emergencia */

@@ -1,10 +1,16 @@
 import * as THREE from 'three';
+import { AnimatedEntity } from './AnimatedEntity.js';
+import { loadModelsManifest } from './ModelLoader.js';
 
 /**
  * Lugareños y personajes 3D de Gandía (NPCs).
  * Cada zona cuenta con un habitante autóctono con el que podemos hablar
  * para descubrir la historia, tradiciones y secretos del lugar, así como
  * recibir pistas de conservación sobre la fauna en peligro.
+ *
+ * Los humanos se cargan con un modelo 3D detallado (.glb) vía GLTFLoader y se
+ * animan con un AnimationMixer (idle / walk / talk). Si el modelo no está
+ * disponible, se usa el monigote de primitivas como respaldo.
  */
 
 export const NPCS_DATA = {
@@ -83,11 +89,18 @@ export class NPCs3D {
     const group = new THREE.Group();
     const x = data.coords.x;
     const z = data.coords.z;
-    const y = this.terrain.getHeight(x, z, zoneId);
+    const y = this.terrain.getGroundHeight
+      ? this.terrain.getGroundHeight(x, z, zoneId, 500)
+      : this.terrain.getHeight(x, z, zoneId);
 
-    // Malla del personaje en 3D
-    const character = this.buildCharacterMesh(data.outfit);
-    group.add(character);
+    // Personaje 3D animado: intenta cargar el humano detallado (GLTF +
+    // AnimationMixer) y, si no, usa el monigote de primitivas como respaldo.
+    const character = new AnimatedEntity({
+      path: null, // se rellena al cargar el manifiesto de modelos
+      buildFallback: () => this.buildCharacterMesh(data.outfit),
+      motion: 'idle',
+    });
+    group.add(character.root);
 
     // Indicador flotante "Hablar" / icono de diálogo
     const talkIcon = this.createTalkBadge();
@@ -104,6 +117,22 @@ export class NPCs3D {
       data,
       zoneId,
     };
+
+    // Carga asíncrona del modelo humano detallado del manifiesto.
+    this._loadNpcModel(this.activeNpc);
+  }
+
+  /** Carga el modelo GLTF del humano con sus animaciones (no bloqueante). */
+  async _loadNpcModel(npc) {
+    try {
+      const manifest = await loadModelsManifest();
+      const cfg = manifest?.npc;
+      if (!cfg?.path) return;
+      // Intercambia en caliente el monigote por el humano detallado + mixer.
+      await npc.character.setModelSource(cfg.path, cfg.animations ?? {});
+    } catch (e) {
+      /* mantiene el monigote */
+    }
   }
 
   buildCharacterMesh(outfit) {
@@ -172,7 +201,7 @@ export class NPCs3D {
   }
 
   /** Actualización de animación por fotograma */
-  update(time, camera) {
+  update(time, camera, delta = 1 / 60) {
     if (!this.activeNpc) return;
 
     // El badge de diálogo siempre mira hacia la cámara
@@ -182,10 +211,9 @@ export class NPCs3D {
       this.activeNpc.talkIcon.position.y = floatY;
     }
 
-    // Respiración del personaje
+    // Avanza el AnimationMixer (o la animación procedural de respaldo).
     if (this.activeNpc.character) {
-      const breathe = Math.sin(time * 2.5) * 0.02;
-      this.activeNpc.character.scale.set(1, 1 + breathe, 1);
+      this.activeNpc.character.update(delta, time);
     }
   }
 

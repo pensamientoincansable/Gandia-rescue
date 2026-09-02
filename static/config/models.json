@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "description": "Manifiesto de modelos 3D (.glb/.gltf) para humanos y animales. Cada ruta se resuelve relativa al documento (public/models/). Si un modelo no existe o falla su descarga, el juego usa automáticamente el monigote de primitivas como respaldo.",
+  "npc": {
+    "path": "models/npc.glb",
+    "animations": { "idle": "Idle", "walk": "Walk", "talk": "Talk" }
+  },
+  "ranger": {
+    "path": "models/ranger.glb",
+    "animations": { "idle": "Idle", "walk": "Walk", "run": "Run", "jump": "Jump" }
+  },
+  "animals": {
+    "erizo": { "path": "models/animals/erizo.glb", "animations": { "idle": "Idle" } },
+    "jabali": { "path": "models/animals/jabali.glb", "animations": { "idle": "Idle" } },
+    "gavina": { "path": "models/animals/gaviota.glb", "animations": { "idle": "Fly", "walk": "Walk" } },
+    "conejo": { "path": "models/animals/conejo.glb", "animations": { "idle": "Idle" } },
+    "gato": { "path": "models/animals/gato.glb", "animations": { "idle": "Idle" } },
+    "mochuelo": { "path": "models/animals/mochuelo.glb", "animations": { "idle": "Idle" } },
+    "garza": { "path": "models/animals/garza.glb", "animations": { "idle": "Idle" } },
+    "paloma": { "path": "models/animals/paloma.glb", "animations": { "idle": "Idle" } }
+  }
+}
