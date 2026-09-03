@@ -21,10 +21,25 @@ ambientado en Gandía (La Safor), con navegación 360° estilo Street View.
   isométricas texturizadas, profundidad por parallax, cielo ambiental y sombras. Subir
   de nivel en el modo rescate desbloquea elementos (naranjo, charca, caja-nido,
   farolillo…) y atrae fauna de Gandía (erizo, jabalí, mochuelo, garza…).
-- **Paisajes 3D con acabado PS2**: las texturas de suelo/cielo y los árboles FBX
-  suministrados en `media/` se aplican por hábitat (costa, huerta, marjal, Serpis,
-  casco histórico y Montdúver). La vegetación se instancia y deja las carreteras,
-  caminos y pistas forestales transitables y visibles.
+- **Paisajes 3D con acabado PS2**: cada hábitat (costa, huerta, marjal, Serpis,
+  casco histórico y Montdúver) se construye con materiales propios y modelos
+  reales, **sin ninguna primitiva sin textura**:
+  - *Vegetación modelada*: 23 árboles y 8 arbustos FBX de `media/models` con su
+    atlas alfa. Los arbustos se reescalan de forma no uniforme para hacer de
+    carrizos, matas de dunas, adelfas y flores.
+  - *Atrezo modelado*: rocas con ruido de vértices, cantos rodados, farolas,
+    bolardos, cajas de pesca, bancos, jardineras, sombrillas, muretes…
+  - *Hitos en `.glb`*: faro, barco de pesca, torreta de socorrismo, alquería,
+    Colegiata, fuente monumental, torre de la cumbre, puente en arco, pasarela
+    y pantalán (`scripts/gen-props.mjs`).
+  - **Sólo las rutas practicables** (carreteras, caminos, puentes y pista
+    forestal) conservan la fotografía satelital de la zona. El resto del mundo
+    usa materiales propios por hábitat, pintados además por vértices.
+- **Física coherente con el entorno**: la furgoneta ya no atraviesa árboles,
+  rocas, fachadas ni mobiliario (colisión por rejilla espacial con
+  deslizamiento), no se mete en el mar, la dársena ni el cauce del Serpis, y su
+  cabeceo y alabeo se calculan con la altura real de las cuatro ruedas,
+  limitados y suavizados para que nunca vuelque visualmente.
 - Localización completa en español, valenciano e inglés.
 - Colección educativa de fauna local que se desbloquea completando rescates.
 - Layout responsive, controles táctiles y ayudas de teclado.
@@ -36,6 +51,34 @@ ambientado en Gandía (La Safor), con navegación 360° estilo Street View.
 npm install
 npm run dev -- --host 0.0.0.0
 ```
+
+### Recursos del mundo 3D
+
+Todo el arte del escenario se deriva de los originales de `media/` (que nunca se
+modifican):
+
+```bash
+npm run assets:world   # adapta media/ → public/world (reescala y recodifica)
+npm run assets:props   # genera los .glb de atrezo e hitos en public/models/world
+npm run build          # assets:world + assets:props + bundle static/ + dist/
+```
+
+- `scripts/lib/png.mjs` decodifica, reescala y vuelve a codificar los PNG sin
+  dependencias externas: los mapas de 512 px se publican a 128-256 px, con lo
+  que el peso servido baja un orden de magnitud.
+- `scripts/sync-world-assets.mjs` decide qué imagen de `media/image` se usa
+  como material (arena, tierra, hierba, roca, madera, teja, metal, lona…) y la
+  publica en `public/world/materials/`. El tinte de cada material vive en
+  `src/three/WorldAssets.js` (`MATERIAL_SETTINGS`).
+- `scripts/gen-props.mjs` modela los hitos y fusiona sus piezas por material
+  antes de exportarlas, de modo que un pantalán pasa de 46 a 5 llamadas de
+  dibujo. Sus materiales están **nombrados** (`wood`, `stone`, `tile`…) y
+  `src/three/PropsLibrary.js` los sustituye en caliente por los materiales
+  texturizados del repositorio.
+
+Para añadir una especie nueva basta con copiar su FBX y su PNG a `media/`,
+añadirlos al listado de `scripts/sync-world-assets.mjs` y darles una entrada en
+`VEGETATION_ASSETS` (`src/three/WorldAssets.js`).
 
 ## Producción
 
@@ -182,8 +225,10 @@ sólo requiere editar el JSON correspondiente.
 ```bash
 npm run test:engine     # InputManager + PlayerController contra los JSON reales
 npm run test:movement   # conducir, bajar junto a la furgoneta, caminar y volver a subir
-npm run test:world      # texturas / FBX de media disponibles, parseables y con UVs
-npm test                # todas las suites del motor y recursos ambientales
+npm run test:collision  # la furgoneta choca y desliza, no vuelca y no entra en el agua
+npm run test:scene      # auditoría: ninguna primitiva sin textura en las 6 zonas
+npm run test:world      # texturas / FBX / .glb de media disponibles y parseables
+npm test                # todas las suites del motor, la física y los recursos
 npm run build && npm run test:ui      # controles del HUD sobre el bundle montado
 npm run build && npm run test:smoke   # recorrido end-to-end en jsdom
 ```

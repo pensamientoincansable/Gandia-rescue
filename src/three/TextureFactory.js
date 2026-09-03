@@ -1,17 +1,26 @@
 import * as THREE from 'three';
-import { SKY_TEXTURES, TERRAIN_TEXTURES, TERRAIN_TEXTURE_SETTINGS } from './WorldAssets.js';
+import {
+  GROUND_STYLES, MATERIAL_SETTINGS, MATERIAL_TEXTURES, SATELLITE_TEXTURES, SKY_TEXTURES,
+} from './WorldAssets.js';
 
 /**
  * Generador de texturas optimizadas para Three.js.
  *
- * Las bases de los paisajes ya no son sólo ruido procedural: primero usamos
- * los mapas entregados en `media/image` y dejamos los canvas como respaldo
- * offline para tests o navegadores que no puedan cargar imágenes. El contraste
- * y la repetición contenidos conservan una lectura nítida, estilizada y propia
- * de un juego de la era PS2.
+ * Regla de oro del mundo 3D: **la fotografía satelital sólo se usa en las rutas
+ * practicables** (carreteras, caminos y puentes). Todo lo demás —el suelo de
+ * cada hábitat, el atrezo, los hitos y la vegetación— se construye con
+ * materiales propios a partir de las imágenes de `media/` adaptadas por
+ * `scripts/sync-world-assets.mjs`.
+ *
+ * Cada textura se devuelve de inmediato (base procedural, válida en jsdom y sin
+ * red) y se *enriquece* en cuanto la imagen termina de descargarse: se pintan
+ * los mapas reales sobre el lienzo y se marca `needsUpdate`. Así el mundo nunca
+ * espera a la red y, cuando llega, gana el detalle de las fotos originales.
  */
 
 const textureCache = new Map();
+/** Caché de elementos <img> para pintar los mapas sobre los lienzos. */
+const imageCache = new Map();
 
 function createFallbackTexture(r = 100, g = 150, b = 130) {
   const data = new Uint8Array([r, g, b, 255]);
@@ -21,16 +30,79 @@ function createFallbackTexture(r = 100, g = 150, b = 130) {
 }
 
 /**
+ * Textura plana de un color concreto. Se usa como red de seguridad: si la
+ * imagen de `media/` no llega a descargarse, el objeto conserva su color en
+ * lugar de quedarse negro.
+ */
+function createSolidTexture(colorHex) {
+  const color = new THREE.Color(colorHex ?? 0xcccccc);
+  const data = new Uint8Array([
+    Math.round(color.r * 255),
+    Math.round(color.g * 255),
+    Math.round(color.b * 255),
+    255,
+  ]);
+  const tex = new THREE.DataTexture(data, 1, 1, THREE.RGBAFormat);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.needsUpdate = true;
+  return tex;
+}
+
+/** Sustituye el contenido de una textura por un color plano (error de carga). */
+function paintSolidFallback(texture, colorHex) {
+  const solid = createSolidTexture(colorHex);
+  texture.image = solid.image;
+  texture.needsUpdate = true;
+  return texture;
+}
+
+/**
+ * Carga un elemento de imagen (con caché) para poder pintarlo en un canvas.
+ * @param {string} url
+ * @returns {Promise<HTMLImageElement|null>}
+ */
+function loadImageElement(url) {
+  if (!url || typeof document === 'undefined') return Promise.resolve(null);
+  if (imageCache.has(url)) return imageCache.get(url);
+
+  const promise = new Promise((resolve) => {
+    const image = new Image();
+    image.decoding = 'async';
+    image.onload = () => resolve(image);
+    image.onerror = () => resolve(null);
+    image.src = url;
+  });
+  imageCache.set(url, promise);
+  return promise;
+}
+
+/** Prepara un lienzo de trabajo o devuelve null si no hay DOM (tests). */
+function createCanvas(width, height) {
+  if (typeof document === 'undefined' || !document.createElement) return null;
+  const canvas = document.createElement('canvas');
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext ? canvas.getContext('2d') : null;
+  return ctx ? { canvas, ctx } : null;
+}
+
+/**
  * Carga una textura de los recursos subidos al repositorio sin fijar una URL
  * absoluta. El manifiesto resuelve cada URL para Vite, `dist` y el bundle
  * `static/` de GitHub Pages.
  */
-function createMediaTexture(cacheKey, url, { repeat = [1, 1], wrapT = THREE.RepeatWrapping } = {}) {
+function createMediaTexture(cacheKey, url, { repeat = [1, 1], wrapT = THREE.RepeatWrapping, fallbackColor = 0xcccccc } = {}) {
   if (textureCache.has(cacheKey)) return textureCache.get(cacheKey);
   if (!url || typeof document === 'undefined') return null;
 
   try {
-    const texture = new THREE.TextureLoader().load(url, undefined, undefined, () => { /* respaldo visual: textura procedural */ });
+    const texture = new THREE.TextureLoader().load(
+      url,
+      (loaded) => { loaded.needsUpdate = true; },
+      undefined,
+      // Sin imagen: el material mantiene su color en vez de volverse negro.
+      () => paintSolidFallback(texture, fallbackColor),
+    );
     texture.colorSpace = THREE.SRGBColorSpace;
     texture.wrapS = THREE.RepeatWrapping;
     texture.wrapT = wrapT;
@@ -44,100 +116,251 @@ function createMediaTexture(cacheKey, url, { repeat = [1, 1], wrapT = THREE.Repe
   }
 }
 
-/** Textura de terreno estilo satélite para cada zona de Gandía */
-export function createSatelliteTerrainTexture(zoneId) {
-  const cacheKey = `sat_${zoneId}`;
+/* ------------------------------------------------------------------ suelos */
+
+/** Paleta procedural de cada hábitat (base antes de aplicar los mapas). */
+const GROUND_PALETTES = {
+  platja: { base: '#d9c191', dark: '#b79a63', accent: '#e8d9b3' },
+  port: { base: '#8e8d86', dark: '#6f6f69', accent: '#a7a49a' },
+  marjal: { base: '#5f7f46', dark: '#3f5a30', accent: '#7d9a55' },
+  riu: { base: '#79895c', dark: '#55663f', accent: '#9aa577' },
+  casc: { base: '#9c9584', dark: '#79705f', accent: '#b6ab97' },
+  montduver: { base: '#7e8567', dark: '#5d6350', accent: '#9aa085' },
+};
+
+/** Motivos procedurales por zona: dunas, bancales, adoquines, estratos… */
+function paintGroundMotif(ctx, zoneId, size) {
+  const palette = GROUND_PALETTES[zoneId] ?? GROUND_PALETTES.marjal;
+
+  if (zoneId === 'platja') {
+    // Óndulas de arena y cordón dunar.
+    ctx.strokeStyle = 'rgba(255,255,255,0.18)';
+    ctx.lineWidth = 3;
+    for (let y = 0; y < size; y += 26) {
+      ctx.beginPath();
+      for (let x = 0; x <= size; x += 24) ctx.lineTo(x, y + Math.sin(x * 0.02 + y * 0.01) * 9);
+      ctx.stroke();
+    }
+  } else if (zoneId === 'marjal') {
+    // Bancales de arroz inundados.
+    ctx.strokeStyle = 'rgba(38,64,40,0.55)';
+    ctx.lineWidth = 6;
+    for (let x = 40; x < size; x += 128) {
+      ctx.beginPath();
+      ctx.moveTo(x, 0);
+      ctx.lineTo(x, size);
+      ctx.stroke();
+    }
+    ctx.fillStyle = 'rgba(60,110,120,0.28)';
+    for (let y = 60; y < size; y += 190) ctx.fillRect(40, y, size - 80, 70);
+  } else if (zoneId === 'casc') {
+    // Adoquinado irregular del casco histórico.
+    const tile = 34;
+    ctx.strokeStyle = 'rgba(90,84,72,0.6)';
+    ctx.lineWidth = 2;
+    for (let y = 0; y < size; y += tile) {
+      const shift = ((y / tile) % 2) * (tile / 2);
+      for (let x = -shift; x < size; x += tile) ctx.strokeRect(x, y, tile - 2, tile - 2);
+    }
+  } else if (zoneId === 'montduver') {
+    // Estratos y canchales de la sierra.
+    ctx.strokeStyle = 'rgba(150,146,132,0.35)';
+    ctx.lineWidth = 4;
+    for (let y = 30; y < size; y += 66) {
+      ctx.beginPath();
+      for (let x = 0; x <= size; x += 48) ctx.lineTo(x, y + Math.sin(x * 0.03) * 16);
+      ctx.stroke();
+    }
+    ctx.fillStyle = 'rgba(120,118,108,0.35)';
+    for (let i = 0; i < 160; i += 1) {
+      const r = 3 + Math.random() * 9;
+      ctx.beginPath();
+      ctx.arc(Math.random() * size, Math.random() * size, r, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  } else if (zoneId === 'riu') {
+    // Cantos rodados del cauce y vegetación de ribera.
+    ctx.fillStyle = 'rgba(150,146,128,0.4)';
+    for (let i = 0; i < 220; i += 1) {
+      const r = 2 + Math.random() * 7;
+      ctx.beginPath();
+      ctx.ellipse(Math.random() * size, Math.random() * size, r, r * 0.7, Math.random() * 3, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  } else if (zoneId === 'port') {
+    // Losas del muelle y juntas de dilatación.
+    ctx.strokeStyle = 'rgba(70,72,74,0.55)';
+    ctx.lineWidth = 3;
+    for (let i = 0; i <= size; i += 96) {
+      ctx.beginPath();
+      ctx.moveTo(i, 0);
+      ctx.lineTo(i, size);
+      ctx.moveTo(0, i);
+      ctx.lineTo(size, i);
+      ctx.stroke();
+    }
+  }
+
+  // Manchas orgánicas comunes: rompen la repetición del mapa.
+  ctx.save();
+  for (let i = 0; i < 90; i += 1) {
+    ctx.globalAlpha = 0.05 + Math.random() * 0.08;
+    ctx.fillStyle = Math.random() > 0.5 ? palette.dark : palette.accent;
+    ctx.beginPath();
+    ctx.ellipse(Math.random() * size, Math.random() * size, 20 + Math.random() * 90, 16 + Math.random() * 70, Math.random() * 3, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.restore();
+}
+
+/**
+ * Textura de suelo por hábitat. **No** usa fotografía satelital: combina los
+ * materiales adaptados de `media/` (arena, tierra, hierba, roca…) con un motivo
+ * procedural propio de cada zona.
+ */
+export function createGroundTexture(zoneId) {
+  const cacheKey = `ground_${zoneId}`;
   if (textureCache.has(cacheKey)) return textureCache.get(cacheKey);
 
-  // Mapas de terreno suministrados: marjal, ribera, roca, costa y suelo
-  // histórico conservan patrones reconocibles incluso desde la cámara cenital.
-  const settings = TERRAIN_TEXTURE_SETTINGS[zoneId] ?? { repeat: [1.2, 1.2] };
-  const supplied = createMediaTexture(cacheKey, TERRAIN_TEXTURES[zoneId], settings);
-  if (supplied) return supplied;
+  const style = GROUND_STYLES[zoneId] ?? GROUND_STYLES.marjal;
+  const palette = GROUND_PALETTES[zoneId] ?? GROUND_PALETTES.marjal;
+  const size = 768;
+  const surface = createCanvas(size, size);
 
-  const canvas = typeof document !== 'undefined' ? document.createElement('canvas') : null;
-  const ctx = canvas && canvas.getContext ? canvas.getContext('2d') : null;
-  if (!ctx) {
-    const tex = createFallbackTexture(80, 130, 100);
+  if (!surface) {
+    const tex = createFallbackTexture(120, 140, 100);
     textureCache.set(cacheKey, tex);
     return tex;
   }
 
-  canvas.width = 1024;
-  canvas.height = 1024;
-
-  if (zoneId === 'platja') {
-    const grad = ctx.createLinearGradient(0, 0, 1024, 0);
-    grad.addColorStop(0, '#50564d');
-    grad.addColorStop(0.2, '#c8b68a');
-    grad.addColorStop(0.4, '#e5d3a5');
-    grad.addColorStop(0.72, '#d6be8c');
-    grad.addColorStop(0.78, '#3b929c');
-    grad.addColorStop(1.0, '#1a5970');
-    ctx.fillStyle = grad;
-    ctx.fillRect(0, 0, 1024, 1024);
-
-    addNoise(ctx, 1024, 1024, 0.12, '#2f2416');
-    addCoastFoam(ctx, 740, 1024);
-  } else if (zoneId === 'port') {
-    const grad = ctx.createLinearGradient(0, 0, 1024, 1024);
-    grad.addColorStop(0, '#64686b');
-    grad.addColorStop(0.4, '#7a7e80');
-    grad.addColorStop(0.5, '#495257');
-    grad.addColorStop(0.55, '#1e4854');
-    grad.addColorStop(1.0, '#10303b');
-    ctx.fillStyle = grad;
-    ctx.fillRect(0, 0, 1024, 1024);
-    addGridLines(ctx, 0, 0, 512, 1024, 64, '#505356');
-    addNoise(ctx, 1024, 1024, 0.08, '#000000');
-  } else if (zoneId === 'marjal') {
-    const grad = ctx.createLinearGradient(0, 0, 1024, 1024);
-    grad.addColorStop(0, '#557c43');
-    grad.addColorStop(0.3, '#749d52');
-    grad.addColorStop(0.6, '#4e6d3c');
-    grad.addColorStop(0.85, '#3b5530');
-    grad.addColorStop(1.0, '#6e8f49');
-    ctx.fillStyle = grad;
-    ctx.fillRect(0, 0, 1024, 1024);
-
-    drawAgriculturalGrid(ctx, 1024, 1024);
-    addNoise(ctx, 1024, 1024, 0.1, '#1b3211');
-  } else if (zoneId === 'riu') {
-    const grad = ctx.createLinearGradient(0, 0, 1024, 0);
-    grad.addColorStop(0, '#5c7a45');
-    grad.addColorStop(0.3, '#7d8e63');
-    grad.addColorStop(0.45, '#9fa392');
-    grad.addColorStop(0.5, '#3c726a');
-    grad.addColorStop(0.55, '#9fa392');
-    grad.addColorStop(0.7, '#748b52');
-    grad.addColorStop(1.0, '#668046');
-    ctx.fillStyle = grad;
-    ctx.fillRect(0, 0, 1024, 1024);
-    addNoise(ctx, 1024, 1024, 0.12, '#2b331c');
-  } else if (zoneId === 'casc') {
-    ctx.fillStyle = '#9e978b';
-    ctx.fillRect(0, 0, 1024, 1024);
-    drawCobblestonePattern(ctx, 1024, 1024);
-    addNoise(ctx, 1024, 1024, 0.08, '#3a342b');
-  } else if (zoneId === 'montduver') {
-    const grad = ctx.createRadialGradient(512, 512, 50, 512, 512, 600);
-    grad.addColorStop(0, '#c7c2b6');
-    grad.addColorStop(0.4, '#8e8b7d');
-    grad.addColorStop(0.7, '#4e623b');
-    grad.addColorStop(1.0, '#3f522e');
-    ctx.fillStyle = grad;
-    ctx.fillRect(0, 0, 1024, 1024);
-    drawRockStrata(ctx, 1024, 1024);
-    addNoise(ctx, 1024, 1024, 0.15, '#1e2417');
-  }
+  const { canvas, ctx } = surface;
+  ctx.fillStyle = palette.base;
+  ctx.fillRect(0, 0, size, size);
+  paintGroundMotif(ctx, zoneId, size);
+  addNoise(ctx, size, size, 0.1, palette.dark);
 
   const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
   texture.wrapS = THREE.RepeatWrapping;
   texture.wrapT = THREE.RepeatWrapping;
-  texture.anisotropy = 8;
+  texture.repeat.set(style.repeat, style.repeat);
+  texture.anisotropy = 4;
+  texture.needsUpdate = true;
   textureCache.set(cacheKey, texture);
+
+  // Enriquecido diferido: en cuanto cargan los materiales reales se pintan
+  // como capa de detalle (multiply) sobre la base procedural.
+  const layers = [style.low, style.mid, style.high].filter(Boolean);
+  Promise.all(layers.map((kind) => loadImageElement(MATERIAL_TEXTURES[kind]))).then((images) => {
+    let painted = false;
+    images.filter(Boolean).forEach((image, index) => {
+      ctx.save();
+      ctx.globalAlpha = index === 0 ? 0.55 : 0.3;
+      ctx.globalCompositeOperation = index === 0 ? 'multiply' : 'overlay';
+      for (let y = 0; y < size; y += 256) {
+        for (let x = 0; x < size; x += 256) ctx.drawImage(image, x, y, 256, 256);
+      }
+      ctx.restore();
+      painted = true;
+    });
+    if (painted) texture.needsUpdate = true;
+  });
+
   return texture;
 }
+
+/* ------------------------------------------------------------------ rutas */
+
+/**
+ * Textura de ruta practicable. Es la **única** superficie del mundo 3D que
+ * conserva la fotografía satelital: sobre el vuelo de la zona se marca la
+ * calzada, los arcenes y la señalización horizontal, de modo que el trazado
+ * mantiene la lectura real del territorio.
+ */
+export function createSatelliteRouteTexture(zoneId, { lanes = true, dirt = false, repeatX = 1, repeatY = 6 } = {}) {
+  const cacheKey = `route_${zoneId}_${dirt ? 'dirt' : 'asphalt'}_${lanes ? 'l' : 'n'}_${repeatX}x${repeatY}`;
+  if (textureCache.has(cacheKey)) return textureCache.get(cacheKey);
+
+  const size = 512;
+  const surface = createCanvas(size, size);
+
+  if (!surface) {
+    const tex = createFallbackTexture(dirt ? 120 : 45, dirt ? 100 : 48, dirt ? 78 : 50);
+    textureCache.set(cacheKey, tex);
+    return tex;
+  }
+
+  const { canvas, ctx } = surface;
+  // Base siempre válida (asfalto o tierra apisonada) por si el satélite falla.
+  ctx.fillStyle = dirt ? '#7a6144' : '#33363a';
+  ctx.fillRect(0, 0, size, size);
+  addNoise(ctx, size, size, dirt ? 0.12 : 0.09, dirt ? '#4a3a26' : '#111111');
+  paintLaneMarkings(ctx, size, { lanes, dirt });
+
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.wrapS = THREE.RepeatWrapping;
+  texture.wrapT = THREE.RepeatWrapping;
+  texture.repeat.set(repeatX, repeatY);
+  texture.anisotropy = 8;
+  texture.needsUpdate = true;
+  textureCache.set(cacheKey, texture);
+
+  // Capa satelital: el vuelo real de la zona como arcén, con la calzada
+  // marcada encima. Sólo las rutas la usan.
+  loadImageElement(SATELLITE_TEXTURES[zoneId] ?? SATELLITE_TEXTURES.platja).then((image) => {
+    if (!image) return;
+    ctx.save();
+    ctx.globalAlpha = 0.55;
+    ctx.drawImage(image, 0, 0, size, size);
+    ctx.restore();
+
+    // Banda de rodadura: oscurece el centro y deja ver el entorno en los bordes.
+    const bandWidth = size * (dirt ? 0.52 : 0.62);
+    const band = (size - bandWidth) / 2;
+    ctx.save();
+    ctx.globalAlpha = dirt ? 0.42 : 0.72;
+    ctx.fillStyle = dirt ? '#6d5637' : '#2f3235';
+    ctx.fillRect(band, 0, bandWidth, size);
+    ctx.restore();
+
+    addNoise(ctx, size, size, 0.07, '#000000');
+    paintLaneMarkings(ctx, size, { lanes, dirt });
+    texture.needsUpdate = true;
+  });
+
+  return texture;
+}
+
+function paintLaneMarkings(ctx, size, { lanes, dirt }) {
+  if (dirt) {
+    // Rodadas de los tractores sobre el camino rural.
+    ctx.strokeStyle = 'rgba(90,72,48,0.55)';
+    ctx.lineWidth = 14;
+    for (const x of [size * 0.38, size * 0.62]) {
+      ctx.beginPath();
+      ctx.moveTo(x, 0);
+      ctx.lineTo(x, size);
+      ctx.stroke();
+    }
+    return;
+  }
+  if (!lanes) return;
+
+  ctx.fillStyle = 'rgba(238,242,245,0.9)';
+  ctx.fillRect(size * 0.06, 0, 10, size);
+  ctx.fillRect(size * 0.92, 0, 10, size);
+
+  ctx.fillStyle = 'rgba(232,184,53,0.9)';
+  for (let y = 12; y < size; y += 96) ctx.fillRect(size * 0.495, y, 9, 52);
+}
+
+/** Compatibilidad: la carretera genérica pasa a ser la ruta satelital. */
+export function createRoadTexture() {
+  return createSatelliteRouteTexture('platja');
+}
+
+/* ------------------------------------------------------------------ cielo */
 
 /**
  * Cielo de nubes a partir de los mapas de Elements entregados en /media.
@@ -160,59 +383,101 @@ export function createSkyTexture(zoneId = 'platja') {
   return fallback;
 }
 
-/** Textura de carretera / asfalto con marcas viales */
-export function createRoadTexture() {
-  const cacheKey = 'tex_road';
+/* ------------------------------------------------------------------ materiales de atrezo */
+
+/**
+ * Textura de un material de atrezo (`sand`, `wood`, `rock`…).
+ * Si la imagen no está disponible todavía, devuelve un color plano con el
+ * tinte del material para que la escena siga siendo coherente.
+ */
+export function createMaterialTexture(kind, { repeat = [1, 1] } = {}) {
+  const cacheKey = `mat_${kind}_${repeat.join('x')}`;
   if (textureCache.has(cacheKey)) return textureCache.get(cacheKey);
 
-  const canvas = typeof document !== 'undefined' ? document.createElement('canvas') : null;
-  const ctx = canvas && canvas.getContext ? canvas.getContext('2d') : null;
-  if (!ctx) {
-    const tex = createFallbackTexture(45, 48, 50);
-    textureCache.set(cacheKey, tex);
-    return tex;
-  }
+  const settings = MATERIAL_SETTINGS[kind] ?? { tint: 0xcccccc };
+  const supplied = createMediaTexture(cacheKey, MATERIAL_TEXTURES[kind], {
+    repeat,
+    fallbackColor: settings.tint,
+  });
+  if (supplied) return supplied;
 
-  canvas.width = 512;
-  canvas.height = 512;
-
-  ctx.fillStyle = '#2c2e30';
-  ctx.fillRect(0, 0, 512, 512);
-  addNoise(ctx, 512, 512, 0.08, '#111111');
-
-  ctx.fillStyle = '#f0f3f5';
-  ctx.fillRect(20, 0, 14, 512);
-  ctx.fillRect(478, 0, 14, 512);
-
-  ctx.fillStyle = '#e8b835';
-  for (let y = 10; y < 512; y += 80) {
-    ctx.fillRect(250, y, 12, 45);
-  }
-
-  const texture = new THREE.CanvasTexture(canvas);
-  texture.wrapS = THREE.RepeatWrapping;
-  texture.wrapT = THREE.RepeatWrapping;
-  texture.repeat.set(1, 8);
-  textureCache.set(cacheKey, texture);
-  return texture;
+  const tex = createSolidTexture(settings.tint ?? 0xcccccc);
+  tex.wrapS = THREE.RepeatWrapping;
+  tex.wrapT = THREE.RepeatWrapping;
+  tex.repeat.set(...repeat);
+  textureCache.set(cacheKey, tex);
+  return tex;
 }
 
-/** Textura de agua marina / fluvial con cáusticas y brillos */
-export function createWaterTexture(isSea = true) {
-  const cacheKey = `tex_water_${isSea ? 'sea' : 'river'}`;
+/**
+ * Material estándar de atrezo: mapa adaptado de `media/` + tinte y rugosidad
+ * del catálogo. Se cachea por (material, repetición) para compartirlo entre
+ * todas las instancias del mismo objeto.
+ */
+export function createSurfaceMaterial(kind, overrides = {}) {
+  const settings = MATERIAL_SETTINGS[kind] ?? {};
+  const repeat = overrides.repeat ?? settings.repeat ?? [1, 1];
+  const cacheKey = `surf_${kind}_${repeat.join('x')}_${JSON.stringify(overrides)}`;
   if (textureCache.has(cacheKey)) return textureCache.get(cacheKey);
 
-  const canvas = typeof document !== 'undefined' ? document.createElement('canvas') : null;
-  const ctx = canvas && canvas.getContext ? canvas.getContext('2d') : null;
-  if (!ctx) {
+  const material = new THREE.MeshStandardMaterial({
+    map: createMaterialTexture(kind, { repeat }),
+    color: overrides.color ?? settings.tint ?? 0xffffff,
+    roughness: overrides.roughness ?? settings.roughness ?? 0.85,
+    metalness: overrides.metalness ?? settings.metalness ?? 0.05,
+    flatShading: overrides.flatShading ?? false,
+    dithering: true,
+  });
+  material.name = `Gandia surface · ${kind}`;
+  textureCache.set(cacheKey, material);
+  return material;
+}
+
+/** Variante con canal alfa para cartelas de vegetación (carrizos, flores…). */
+export function createFoliageMaterial(textureUrl, { alphaTest = 0.42, tint = 0xffffff } = {}) {
+  const cacheKey = `foliage_${textureUrl}_${alphaTest}_${tint}`;
+  if (textureCache.has(cacheKey)) return textureCache.get(cacheKey);
+
+  const texture = typeof document === 'undefined'
+    ? null
+    : new THREE.TextureLoader().load(textureUrl, (t) => { t.needsUpdate = true; }, undefined, () => {});
+  if (texture) {
+    texture.colorSpace = THREE.SRGBColorSpace;
+    texture.wrapS = THREE.ClampToEdgeWrapping;
+    texture.wrapT = THREE.ClampToEdgeWrapping;
+    texture.anisotropy = 4;
+  }
+
+  const material = new THREE.MeshStandardMaterial({
+    map: texture ?? null,
+    color: tint,
+    transparent: false,
+    alphaTest,
+    side: THREE.DoubleSide,
+    roughness: 0.9,
+    metalness: 0,
+    dithering: true,
+  });
+  material.name = 'Gandia foliage card';
+  textureCache.set(cacheKey, material);
+  return material;
+}
+
+/* ------------------------------------------------------------------ agua */
+
+/** Textura de agua marina / fluvial con cáusticas y brillos */
+export function createWaterTexture(isSea = true, { repeat = [4, 4] } = {}) {
+  const cacheKey = `tex_water_${isSea ? 'sea' : 'river'}_${repeat.join('x')}`;
+  if (textureCache.has(cacheKey)) return textureCache.get(cacheKey);
+
+  const surface = createCanvas(512, 512);
+  if (!surface) {
     const tex = createFallbackTexture(isSea ? 30 : 45, isSea ? 100 : 110, isSea ? 130 : 90);
     textureCache.set(cacheKey, tex);
     return tex;
   }
 
-  canvas.width = 512;
-  canvas.height = 512;
-
+  const { canvas, ctx } = surface;
   ctx.fillStyle = isSea ? '#18647e' : '#2b5f54';
   ctx.fillRect(0, 0, 512, 512);
 
@@ -232,26 +497,25 @@ export function createWaterTexture(isSea = true) {
   const texture = new THREE.CanvasTexture(canvas);
   texture.wrapS = THREE.RepeatWrapping;
   texture.wrapT = THREE.RepeatWrapping;
-  texture.repeat.set(4, 4);
+  texture.repeat.set(...repeat);
   textureCache.set(cacheKey, texture);
   return texture;
 }
+
+/* ------------------------------------------------------------------ furgoneta */
 
 /** Textura de logotipo y calcomanías de la furgoneta de rescate */
 export function createRescueVanDecal() {
   const cacheKey = 'tex_van_decal';
   if (textureCache.has(cacheKey)) return textureCache.get(cacheKey);
 
-  const canvas = typeof document !== 'undefined' ? document.createElement('canvas') : null;
-  const ctx = canvas && canvas.getContext ? canvas.getContext('2d') : null;
-  if (!ctx) {
+  const surface = createCanvas(512, 256);
+  if (!surface) {
     const tex = createFallbackTexture(255, 255, 255);
     textureCache.set(cacheKey, tex);
     return tex;
   }
-
-  canvas.width = 512;
-  canvas.height = 256;
+  const { canvas, ctx } = surface;
 
   ctx.fillStyle = '#ffffff';
   ctx.fillRect(0, 0, 512, 256);
@@ -283,6 +547,8 @@ export function createRescueVanDecal() {
   return texture;
 }
 
+/* ------------------------------------------------------------------ utilidades de lienzo */
+
 function addNoise(ctx, width, height, opacity, color = '#000000') {
   ctx.save();
   ctx.globalAlpha = opacity;
@@ -294,66 +560,4 @@ function addNoise(ctx, width, height, opacity, color = '#000000') {
     ctx.fillRect(x, y, s, s);
   }
   ctx.restore();
-}
-
-function addCoastFoam(ctx, coastX, height) {
-  ctx.fillStyle = 'rgba(255, 255, 255, 0.65)';
-  for (let y = 0; y < height; y += 4) {
-    const wave = Math.sin(y * 0.05) * 14 + Math.cos(y * 0.02) * 8;
-    const x = coastX + wave;
-    ctx.fillRect(x, y, 10 + Math.random() * 12, 3);
-  }
-}
-
-function addGridLines(ctx, x, y, width, height, step, color) {
-  ctx.strokeStyle = color;
-  ctx.lineWidth = 1;
-  for (let lx = x; lx < x + width; lx += step) {
-    ctx.beginPath();
-    ctx.moveTo(lx, y);
-    ctx.lineTo(lx, y + height);
-    ctx.stroke();
-  }
-}
-
-function drawAgriculturalGrid(ctx, width, height) {
-  ctx.strokeStyle = '#324a25';
-  ctx.lineWidth = 4;
-  for (let x = 60; x < width; x += 120) {
-    ctx.beginPath();
-    ctx.moveTo(x, 0);
-    ctx.lineTo(x, height);
-    ctx.stroke();
-  }
-  for (let y = 80; y < height; y += 140) {
-    ctx.beginPath();
-    ctx.moveTo(0, y);
-    ctx.lineTo(width, y);
-    ctx.stroke();
-  }
-}
-
-function drawCobblestonePattern(ctx, width, height) {
-  ctx.strokeStyle = '#6e675b';
-  ctx.lineWidth = 2;
-  const tile = 32;
-  for (let y = 0; y < height; y += tile) {
-    const shift = ((y / tile) % 2) * (tile / 2);
-    for (let x = -shift; x < width; x += tile) {
-      ctx.strokeRect(x, y, tile - 2, tile - 2);
-    }
-  }
-}
-
-function drawRockStrata(ctx, width, height) {
-  ctx.strokeStyle = '#a49f92';
-  ctx.lineWidth = 3;
-  for (let y = 50; y < height; y += 70) {
-    ctx.beginPath();
-    ctx.moveTo(0, y);
-    for (let x = 0; x <= width; x += 60) {
-      ctx.lineTo(x, y + Math.sin(x * 0.03) * 18);
-    }
-    ctx.stroke();
-  }
 }
