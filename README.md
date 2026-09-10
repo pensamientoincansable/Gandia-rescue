@@ -200,9 +200,43 @@ de sus clips de animación.
 
 | Fichero | Animaciones |
 | --- | --- |
-| `models/ranger.glb` | `Idle`, `Walk`, `Run`, `Jump` |
+| `models/ranger-supavoxel.glb` (personaje jugable) | sin clips → animación procedural |
+| `models/ranger.glb` (respaldo procedural) | `Idle`, `Walk`, `Run`, `Jump` |
 | `models/npc.glb` | `Idle`, `Walk`, `Talk` |
 | `models/animals/*.glb` (8 especies) | `Idle` (+ `Fly` en la gaviota) |
+
+#### Personaje jugable: modelo importado de SupaVoxel
+
+El personaje que controlas a pie usa un **`.glb` externo generado con IA en
+[SupaVoxel](https://supavoxel.com/embed/cmtw2haaq0biajq9o0ay225br)**. Como un
+asset externo llega con unidades y orientación impredecibles, el motor lo
+prepara solo antes de usarlo:
+
+- **Cadena de candidatas** (`ranger.paths` en `models.json`): copia local →
+  URL original del CDN → `models/ranger.glb` procedural → monigote de
+  primitivas. La primera que carga gana, así el juego nunca se queda sin
+  personaje aunque el CDN no responda.
+- **Ajuste automático** (`ranger.fit`, ver `src/three/ModelFitter.js`): mide la
+  caja envolvente del asset y lo escala a `height` metros (1.85 por defecto),
+  apoya los pies en `y = 0`, lo centra en XZ y, con `rotation`, endereza assets
+  Z-up o que miran a otro eje. El asset original no se modifica.
+- **Animación procedural**: si el `.glb` no trae clips (lo normal en modelos
+  generados con IA), `AnimatedEntity` reproduce reposo/caminar/correr/saltar con
+  un balanceo coherente en vez de dejarlo congelado.
+
+Para empaquetar el modelo en el repositorio (carga instantánea, sin depender del
+CDN ni de su política CORS, y disponible en la copia `static/` de GitHub Pages):
+
+```bash
+npm run assets:player                  # descarga public/models/ranger-supavoxel.glb
+npm run assets:player -- --force       # sobrescribe la copia existente
+npm run assets:player -- --url=https://…  # usa otro .glb
+```
+
+El script no interrumpe el build si no hay red: avisa y el juego sigue tirando
+de la URL remota. Para cambiar de personaje basta con editar `ranger.paths` y
+volver a ejecutarlo; si el nuevo asset necesita otra escala u orientación, se
+ajusta en `ranger.fit` sin tocar código.
 
 Los `.glb` se generan proceduralmente (low-poly con jerarquía de pivotes por
 extremidad y `AnimationClips`) con Three.js:
@@ -251,6 +285,7 @@ npm run test:movement   # conducir, bajar junto a la furgoneta, caminar y volver
 npm run test:collision  # la furgoneta choca y desliza, no vuelca y no entra en el agua
 npm run test:scene      # auditoría: ninguna primitiva sin textura en las 6 zonas
 npm run test:world      # texturas / FBX / .glb de media disponibles y parseables
+npm run test:player-model  # modelo del personaje: candidatas, escala y animación
 npm test                # todas las suites del motor, la física y los recursos
 npm run build && npm run test:ui      # controles del HUD sobre el bundle montado
 npm run build && npm run test:smoke   # recorrido end-to-end en jsdom

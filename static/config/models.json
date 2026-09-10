@@ -1,13 +1,26 @@
 {
-  "version": 1,
-  "description": "Manifiesto de modelos 3D (.glb/.gltf) para humanos y animales. Cada ruta se resuelve relativa al documento (public/models/). Si un modelo no existe o falla su descarga, el juego usa automáticamente el monigote de primitivas como respaldo.",
+  "version": 2,
+  "description": "Manifiesto de modelos 3D (.glb/.gltf) para humanos y animales. Cada ruta se resuelve relativa al documento (public/models/). Si un modelo no existe o falla su descarga, el juego prueba la siguiente candidata de `paths` y, en última instancia, el monigote de primitivas como respaldo.",
   "npc": {
     "path": "models/npc.glb",
     "animations": { "idle": "Idle", "walk": "Walk", "talk": "Talk" }
   },
   "ranger": {
-    "path": "models/ranger.glb",
-    "animations": { "idle": "Idle", "walk": "Walk", "run": "Run", "jump": "Jump" }
+    "description": "Personaje jugable. Modelo importado de SupaVoxel (embed cmtw2haaq0biajq9o0ay225br). `paths` es una cadena de candidatas: copia local descargable con `npm run assets:player`, URL original del CDN y, por último, el ranger procedural del repositorio.",
+    "path": "models/ranger-supavoxel.glb",
+    "paths": [
+      "models/ranger-supavoxel.glb",
+      "https://cdn.supavoxel.com/users/V93uvbFB8cOlJCbZLf8wryMIcaXA9XJx/models/3a833456-7355-4fcd-8f76-427d711a67d6_textured.glb",
+      "models/ranger.glb"
+    ],
+    "animations": { "idle": "Idle", "walk": "Walk", "run": "Run", "jump": "Jump" },
+    "fit": {
+      "height": 1.85,
+      "center": true,
+      "ground": 0,
+      "rotation": { "x": 0, "y": 0, "z": 0 }
+    },
+    "source": "SupaVoxel — modelo 3D generado con IA"
   },
   "animals": {
     "erizo": { "path": "models/animals/erizo.glb", "animations": { "idle": "Idle" } },

@@ -2,7 +2,12 @@ import * as THREE from 'three';
 import { createRescueVanDecal } from './TextureFactory.js';
 import { DEFAULT_PLAYER_STATS } from '../engine/defaults.js';
 import { AnimatedEntity } from './AnimatedEntity.js';
-import { loadModelsManifest } from './ModelLoader.js';
+import { DEFAULT_MODELS, loadModelsManifest, normalizeModelPaths } from './ModelLoader.js';
+
+/** Elimina rutas repetidas conservando el orden de prioridad. */
+function dedupePaths(paths) {
+  return paths.filter((path, index) => paths.indexOf(path) === index);
+}
 
 /**
  * Furgoneta 3D de Rescate y Conservación de Gandía.
@@ -257,29 +262,59 @@ export class RescueVan {
 
   /** Crea el avatar a pie del jugador usando el manifiesto de modelos. */
   _initRangerAvatar() {
-    // Monigote de respaldo mientras no haya un .glb del guardián.
+    // Monigote de respaldo mientras no haya un modelo 3D disponible.
     const fallback = this.buildRangerFallbackMesh();
     this.rangerAvatar = new AnimatedEntity({
       path: null,
       buildFallback: () => fallback,
       motion: 'idle',
       scale: 1,
+      label: 'jugador',
     });
     this.rangerGroup.add(this.rangerAvatar.root);
+    this.rangerModelSource = null;
 
-    // Intenta cargar el modelo 3D detallado con sus animaciones (asíncrono).
-    loadModelsManifest().then((manifest) => {
-      const cfg = manifest?.ranger;
-      if (!cfg?.path) return;
-      this.rangerAvatar = new AnimatedEntity({
-        path: cfg.path,
-        animations: cfg.animations ?? {},
-        motion: 'idle',
-        scale: 1,
-      });
-      this.rangerGroup.clear();
-      this.rangerGroup.add(this.rangerAvatar.root);
-    }).catch(() => { /* mantiene el monigote */ });
+    // Sustituye el monigote por el modelo configurado (asíncrono).
+    this._applyRangerModel();
+  }
+
+  /**
+   * Carga el modelo 3D del personaje jugable definido en `models.json`
+   * (entrada `ranger`). Se prueban las candidatas en orden —copia local, URL
+   * remota del asset original, ranger procedural— y la primera que carga gana.
+   * El asset se normaliza con `fit` (altura real, pies en el suelo, centrado),
+   * así que funciona con `.glb` de cualquier origen y unidades.
+   * @returns {Promise<{ loaded: boolean, path: string|null, animated: boolean }>}
+   */
+  async _applyRangerModel() {
+    const defaults = DEFAULT_MODELS.ranger;
+    try {
+      const manifest = await loadModelsManifest();
+      const cfg = manifest?.ranger ?? defaults;
+      const candidates = dedupePaths([
+        ...normalizeModelPaths(cfg.paths ?? cfg.path),
+        ...normalizeModelPaths(defaults.paths ?? defaults.path),
+      ]);
+      const result = await this.rangerAvatar.setModelSources(
+        candidates,
+        cfg.animations ?? defaults.animations,
+        { fit: cfg.fit ?? defaults.fit },
+      );
+      this.rangerModelSource = result.path;
+      if (result.loaded) {
+        console.info(
+          `[GandiaRescue] Personaje del jugador: ${result.path} `
+          + `(${result.animated ? 'con clips de animación' : 'estático → animación procedural'})`
+        );
+      } else {
+        console.warn('[GandiaRescue] Ningún modelo del jugador disponible: se usa el monigote de primitivas.');
+      }
+      this._syncRangerAvatar();
+      return result;
+    } catch (error) {
+      console.warn('[GandiaRescue] No se pudo cargar el modelo del jugador:', error?.message ?? error);
+      return { loaded: false, path: null, animated: false };
+    }
   }
 
   /** Humanoid simple de primitivas usado si no hay modelo GLTF. */
