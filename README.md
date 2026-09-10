@@ -33,8 +33,17 @@ ambientado en Gandía (La Safor), con navegación 360° estilo Street View.
     Colegiata, fuente monumental, torre de la cumbre, puente en arco, pasarela
     y pantalán (`scripts/gen-props.mjs`).
   - **Sólo las rutas practicables** (carreteras, caminos, puentes y pista
-    forestal) conservan la fotografía satelital de la zona. El resto del mundo
-    usa materiales propios por hábitat, pintados además por vértices.
+    forestal) se pintan con los materiales de `media/textures`: asfalto de
+    pizarra, adoquín del casco histórico y tierra apisonada con rodadas. El
+    resto del mundo usa materiales propios por hábitat, pintados además por
+    vértices.
+  - **Ciclo día/noche real**: 10 fases de cielo (noche, madrugada, alba,
+    amanecer, mañana, mediodía, tarde, atardecer, ocaso y crepúsculo)
+    construidas con los panoramas equirrectangulares de `Panorama/` para la
+    cúpula y los cubemaps de `Cubemap/` para la iluminación de entorno PBR.
+    Sol y luna recorren su trayectoria, hay estrellas de noche, la niebla y
+    las luces se modulan por fase, y la hora se puede avanzar con `T`
+    (o automatizar con `Y`).
 - **Física coherente con el entorno**: la furgoneta ya no atraviesa árboles,
   rocas, fachadas ni mobiliario (colisión por rejilla espacial con
   deslizamiento), no se mete en el mar, la dársena ni el cauce del Serpis, y su
@@ -54,20 +63,22 @@ npm run dev -- --host 0.0.0.0
 
 ### Recursos del mundo 3D
 
-Todo el arte del escenario se deriva de los originales de `media/` (que nunca se
-modifican):
+Todo el arte del escenario se deriva de los originales de `media/`,
+`Panorama/` y `Cubemap/` (que nunca se modifican):
 
 ```bash
-npm run assets:world   # adapta media/ → public/world (reescala y recodifica)
+npm run assets:world   # adapta media/ + Panorama/ + Cubemap/ → public/world
 npm run assets:props   # genera los .glb de atrezo e hitos en public/models/world
 npm run build          # assets:world + assets:props + bundle static/ + dist/
 ```
 
-- `scripts/lib/png.mjs` decodifica, reescala y vuelve a codificar los PNG sin
-  dependencias externas: los mapas de 512 px se publican a 128-256 px, con lo
-  que el peso servido baja un orden de magnitud.
-- `scripts/sync-world-assets.mjs` decide qué imagen de `media/image` se usa
-  como material (arena, tierra, hierba, roca, madera, teja, metal, lona…) y la
+- `scripts/lib/png.mjs` decodifica (PNG de 8 y 16 bits), reescala y vuelve a
+  codificar los PNG sin dependencias externas, con filtrado adaptativo por
+  fila: los mapas de 512 px se publican a 128-256 px y los panoramas de
+  2048×1024 a 1024×512, con lo que el peso servido baja un orden de magnitud.
+- `scripts/sync-world-assets.mjs` decide qué imagen de `media/textures`
+  (Bricks, Grass, Roofs, Stone, Tile, Wood, Elements) se usa como material
+  (arena, tierra, hierba, roca, madera, teja, metal, asfalto, agua…) y la
   publica en `public/world/materials/`. El tinte de cada material vive en
   `src/three/WorldAssets.js` (`MATERIAL_SETTINGS`).
 - `scripts/gen-props.mjs` modela los hitos y fusiona sus piezas por material
@@ -75,6 +86,18 @@ npm run build          # assets:world + assets:props + bundle static/ + dist/
   dibujo. Sus materiales están **nombrados** (`wood`, `stone`, `tile`…) y
   `src/three/PropsLibrary.js` los sustituye en caliente por los materiales
   texturizados del repositorio.
+
+### Ciclo día/noche — `DAY_CYCLE`
+
+El catálogo de fases vive en `src/three/WorldAssets.js` (`DAY_CYCLE`): cada
+fase empareja un panorama de `Panorama/Panorama_Sky_NN` (publicado en
+`public/world/sky/pano/`) con las 6 caras rebanadas de
+`Cubemap/Cubemap_Sky_NN` (publicadas en `public/world/sky/cube/`), más la
+altura solar que modula luces, niebla y estrellas.
+`src/three/Atmosphere3D.js` las funde con transiciones suaves y asigna el
+cubemap como `scene.environment` para la iluminación PBR. El ritmo del avance
+automático se ajusta en `public/config/player_stats.json`
+(`world.dayCycle.secondsPerPhase`).
 
 Para añadir una especie nueva basta con copiar su FBX y su PNG a `media/`,
 añadirlos al listado de `scripts/sync-world-assets.mjs` y darles una entrada en
@@ -245,6 +268,7 @@ npm run build && npm run test:smoke   # recorrido end-to-end en jsdom
 | `E` / `Enter` | Interactuar con animales, vecinos y pistas |
 | `V` | Cambiar cámara (3ª persona / cabina / cenital) |
 | `B` · `L` · `H` | Sirena · faros · claxon |
+| `T` · `Y` | Avanzar la hora del día · ciclo día/noche automático |
 
 Todas se pueden reasignar en `public/config/keybindings.json`, y también
 responden mando y los controles táctiles del HUD.

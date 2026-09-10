@@ -1,18 +1,21 @@
 /*
  * Biblioteca de recursos ambientales entregados con el proyecto.
  *
- * `scripts/sync-world-assets.mjs` adapta una selección de /media/image y
- * /media/models a public/world (reescalado y recodificado). En desarrollo y en
- * builds Vite se sirven como /world; en GitHub Pages el bundle autocontenido
- * vive en /static, por lo que se resuelven desde /static/world. Esta pequeña
- * resolución evita rutas absolutas y, además, mantiene este módulo ejecutable
- * directamente en las pruebas Node del motor.
+ * `scripts/sync-world-assets.mjs` adapta una selección de /media/textures,
+ * /media/image, /Panorama y /Cubemap a public/world (reescalado y recodificado).
+ * En desarrollo y en builds Vite se sirven como /world; en GitHub Pages el
+ * bundle autocontenido vive en /static, por lo que se resuelven desde
+ * /static/world. Esta pequeña resolución evita rutas absolutas y, además,
+ * mantiene este módulo ejecutable directamente en las pruebas Node del motor.
  *
  * Regla de diseño del mundo 3D:
- *   · SATÉLITE  → sólo las rutas practicables (carreteras, caminos, puentes).
- *   · MATERIAL  → el suelo y todo el atrezo se construyen con materiales
- *                 propios por hábitat y modelos (FBX de vegetación + .glb
- *                 de atrezo e hitos), nunca con primitivas sin textura.
+ *   · SATÉLITE     → publicado por compatibilidad; las rutas se pintan ahora
+ *                    con el asfalto de media/textures.
+ *   · MATERIAL     → suelo, rutas y atrezo usan la biblioteca fotográfica de
+ *                    media/textures (Bricks, Grass, Roofs, Stone, Tile, Wood,
+ *                    Elements) más los modelos FBX de vegetación.
+ *   · CIELO        → ciclo día/noche de 10 fases: panorama equirrectangular
+ *                    para la cúpula y cubemap para la iluminación de entorno.
  */
 
 /** Resuelve cualquier recurso servido desde `public/`. */
@@ -48,16 +51,19 @@ function worldAssetUrl(path) {
 
 const satelliteAsset = (file) => worldAssetUrl(`satellite/${file}.png`);
 const skyAsset = (file) => worldAssetUrl(`sky/${file}.png`);
+const skyPanoAsset = (phase) => worldAssetUrl(`sky/pano/${phase}.png`);
+const skyCubeAsset = (phase, face) => worldAssetUrl(`sky/cube/${phase}-${face}.png`);
 const materialAsset = (file) => worldAssetUrl(`materials/${file}.png`);
 const treeModel = (file) => worldAssetUrl(`vegetation/${file}.fbx`);
 const treeTexture = (file) => worldAssetUrl(`vegetation/${file}.png`);
 const propModel = (name) => publicAssetUrl(`models/world/${name}.glb`);
 
 /* ------------------------------------------------------------------ satélite */
+
 /*
- * Fotografía aérea de cada zona. Es la única familia de imágenes satelitales
- * que sigue usando el escenario 3D y se aplica exclusivamente a las rutas
- * practicables: el asfalto, los caminos rurales y los tableros de los puentes.
+ * Fotografía aérea de cada zona. Se conserva publicada por compatibilidad con
+ * el manifiesto y las pruebas; el mundo 3D ya no la usa: las rutas se pintan
+ * con los materiales de media/textures (ver GROUND_STYLES y TextureFactory).
  */
 export const SATELLITE_TEXTURES = Object.freeze({
   platja: satelliteAsset('platja'),
@@ -68,15 +74,16 @@ export const SATELLITE_TEXTURES = Object.freeze({
   montduver: satelliteAsset('montduver'),
 });
 
-/** Alias histórico: el suelo ya no usa satélite, sólo las rutas. */
+/** Alias histórico: el suelo ya no usa satélite. */
 export const TERRAIN_TEXTURES = SATELLITE_TEXTURES;
 
 /* ------------------------------------------------------------------ materiales */
 
 /**
- * Texturas base de atrezo y suelo. Proceden de media/image y se eligen por su
- * patrón (grano, veta, moteado); el tinte (`tint`) y la rugosidad los aplica
- * el motor según el material concreto que se esté construyendo.
+ * Texturas base de suelo, rutas y atrezo. Proceden de la biblioteca
+ * fotográfica de `media/textures` (Bricks, Grass, Roofs, Stone, Tile, Wood y
+ * Elements para el agua); el tinte (`tint`) y la rugosidad los aplica el motor
+ * según el material concreto que se esté construyendo.
  */
 export const MATERIAL_TEXTURES = Object.freeze({
   sand: materialAsset('sand'),
@@ -101,59 +108,109 @@ export const MATERIAL_TEXTURES = Object.freeze({
   tile: materialAsset('tile'),
   salt: materialAsset('salt'),
   scrub: materialAsset('scrub'),
+  // Nuevos: calzada asfaltada y agua real (mar y río) desde media/textures.
+  asphalt: materialAsset('asphalt'),
+  'water-sea': materialAsset('water-sea'),
+  'water-river': materialAsset('water-river'),
 });
 
 /**
- * Ajustes de los materiales de atrezo.
- * `repeat` es la repetición del mapa; `tint` reencamina el patrón original de
- * media/ hacia el color real del objeto (arena, madera, terracota…).
+ * Ajustes de los materiales de suelo y atrezo.
+ * `repeat` es la repetición del mapa; `tint` es ahora un ajuste fino sobre la
+ * fotografía (los mapas ya traen su color real), y `roughness`/`metalness`
+ * describen la respuesta de la superficie.
  */
 export const MATERIAL_SETTINGS = Object.freeze({
-  sand: { repeat: [2, 2], tint: 0xe6d2a4, roughness: 0.95 },
-  earth: { repeat: [2, 2], tint: 0x8d6f4c, roughness: 0.92 },
-  clay: { repeat: [1.5, 1.5], tint: 0xb4703f, roughness: 0.85 },
-  grass: { repeat: [2.5, 2.5], tint: 0x7fa355, roughness: 0.9 },
-  meadow: { repeat: [2.5, 2.5], tint: 0x8aa35c, roughness: 0.9 },
-  marsh: { repeat: [2, 2], tint: 0x6b7a4a, roughness: 0.88 },
-  reedbed: { repeat: [2, 2], tint: 0x8a9a52, roughness: 0.9 },
-  forest: { repeat: [2, 2], tint: 0x6d7350, roughness: 0.9 },
-  rock: { repeat: [1, 1], tint: 0xa7a294, roughness: 0.95 },
-  stone: { repeat: [1, 1], tint: 0xa8a396, roughness: 0.9 },
-  gravel: { repeat: [1.5, 1.5], tint: 0x9d9a86, roughness: 0.95 },
-  cobble: { repeat: [1.5, 1.5], tint: 0x9a9184, roughness: 0.85 },
-  wood: { repeat: [1, 1], tint: 0x9c6a3f, roughness: 0.8 },
-  timber: { repeat: [1, 1], tint: 0x7a4a2c, roughness: 0.82 },
-  metal: { repeat: [1, 1], tint: 0x5d646c, roughness: 0.45, metalness: 0.55 },
-  plaster: { repeat: [1, 1], tint: 0xe0d8c4, roughness: 0.9 },
-  cloth: { repeat: [1, 1], tint: 0xd96a3a, roughness: 0.75 },
-  canvas: { repeat: [1, 1], tint: 0x2f7f96, roughness: 0.75 },
-  rust: { repeat: [1, 1], tint: 0x8d5a35, roughness: 0.8, metalness: 0.2 },
-  tile: { repeat: [1.5, 1.5], tint: 0xb06540, roughness: 0.8 },
-  salt: { repeat: [2, 2], tint: 0xbfc0a6, roughness: 0.9 },
-  scrub: { repeat: [2, 2], tint: 0x77864f, roughness: 0.9 },
+  sand: { repeat: [3, 3], tint: 0xe8d8ac, roughness: 0.95 },
+  earth: { repeat: [2.5, 2.5], tint: 0xcbb597, roughness: 0.94 },
+  clay: { repeat: [2, 2], tint: 0xc99e6a, roughness: 0.9 },
+  grass: { repeat: [3, 3], tint: 0x94b06a, roughness: 0.92 },
+  meadow: { repeat: [3, 3], tint: 0xa4b473, roughness: 0.92 },
+  marsh: { repeat: [2.5, 2.5], tint: 0x93a06b, roughness: 0.9 },
+  reedbed: { repeat: [2.5, 2.5], tint: 0xc0b578, roughness: 0.92 },
+  forest: { repeat: [2.5, 2.5], tint: 0x87a06a, roughness: 0.92 },
+  rock: { repeat: [1.5, 1.5], tint: 0xb8b6ae, roughness: 0.96 },
+  stone: { repeat: [1.5, 1.5], tint: 0xc4c0b4, roughness: 0.92 },
+  gravel: { repeat: [2, 2], tint: 0xc9c4b4, roughness: 0.95 },
+  cobble: { repeat: [2, 2], tint: 0xc0b49c, roughness: 0.9 },
+  wood: { repeat: [1.5, 1.5], tint: 0xcbb290, roughness: 0.82 },
+  timber: { repeat: [1.5, 1.5], tint: 0x8f6f52, roughness: 0.84 },
+  metal: { repeat: [1, 1], tint: 0x9aa4ac, roughness: 0.45, metalness: 0.6 },
+  plaster: { repeat: [1.5, 1.5], tint: 0xece7dc, roughness: 0.9 },
+  cloth: { repeat: [1, 1], tint: 0xe08a52, roughness: 0.78 },
+  canvas: { repeat: [1, 1], tint: 0x7fb2c0, roughness: 0.78 },
+  rust: { repeat: [1.5, 1.5], tint: 0xc08a58, roughness: 0.82, metalness: 0.25 },
+  tile: { repeat: [1.5, 1.5], tint: 0xcf9a6e, roughness: 0.8 },
+  salt: { repeat: [2.5, 2.5], tint: 0xe4e6e2, roughness: 0.9 },
+  scrub: { repeat: [2.5, 2.5], tint: 0xb0a887, roughness: 0.94 },
+  asphalt: { repeat: [1, 1], tint: 0xffffff, roughness: 0.94, metalness: 0.05 },
+  'water-sea': { repeat: [6, 6], tint: 0xdff4f2, roughness: 0.24, metalness: 0.35 },
+  'water-river': { repeat: [5, 5], tint: 0xd8ecdf, roughness: 0.3, metalness: 0.28 },
 });
 
-/* ------------------------------------------------------------------ cielos */
+/* ------------------------------------------------------------------ ciclo día/noche */
 
-/** Mapas de cielo procedentes de media/image/Elements_*. */
+/**
+ * Ciclo completo de 24 h en 10 fases visuales. `pano` es el panorama
+ * equirrectangular de la cúpula (Panorama_Sky_NN) y `env` el cubemap
+ * de iluminación (6 caras rebanadas de Cubemap_Sky_NN). `sun` es la altura
+ * solar normalizada [0..1] de la fase y se usa para modular las luces.
+ */
+export const DAY_CYCLE = Object.freeze([
+  Object.freeze({ id: 'noche', pano: skyPanoAsset('noche'), env: cubeFaces('noche'), sun: 0.0, fog: 0x1a2233 }),
+  Object.freeze({ id: 'madrugada', pano: skyPanoAsset('madrugada'), env: cubeFaces('madrugada'), sun: 0.0, fog: 0x2a2840 }),
+  Object.freeze({ id: 'alba', pano: skyPanoAsset('alba'), env: cubeFaces('alba'), sun: 0.12, fog: 0xcabec4 }),
+  Object.freeze({ id: 'amanecer', pano: skyPanoAsset('amanecer'), env: cubeFaces('amanecer'), sun: 0.3, fog: 0xe8c9a8 }),
+  Object.freeze({ id: 'manana', pano: skyPanoAsset('manana'), env: cubeFaces('manana'), sun: 0.62, fog: 0xc7dcea }),
+  Object.freeze({ id: 'mediodia', pano: skyPanoAsset('mediodia'), env: cubeFaces('mediodia'), sun: 1.0, fog: 0xaad8e6 }),
+  Object.freeze({ id: 'tarde', pano: skyPanoAsset('tarde'), env: cubeFaces('tarde'), sun: 0.68, fog: 0xbdd8e2 }),
+  Object.freeze({ id: 'atardecer', pano: skyPanoAsset('atardecer'), env: cubeFaces('atardecer'), sun: 0.34, fog: 0xe6cf9f }),
+  Object.freeze({ id: 'ocaso', pano: skyPanoAsset('ocaso'), env: cubeFaces('ocaso'), sun: 0.14, fog: 0xd9a184 }),
+  Object.freeze({ id: 'crepusculo', pano: skyPanoAsset('crepusculo'), env: cubeFaces('crepusculo'), sun: 0.03, fog: 0x6f6a8c }),
+]);
+
+const PHASE_INDEX = new Map(DAY_CYCLE.map((phase, index) => [phase.id, index]));
+
+/** Índice de una fase por identificador (respaldo: mediodía). */
+export function dayCycleIndex(phaseId) {
+  return PHASE_INDEX.get(phaseId) ?? 5;
+}
+
+/** Identificador de la fase siguiente a `phaseId` (ciclo de 10). */
+export function nextDayCyclePhaseId(phaseId) {
+  const index = dayCycleIndex(phaseId);
+  return DAY_CYCLE[(index + 1) % DAY_CYCLE.length].id;
+}
+
+/** Caras del cubemap publicadas para una fase. */
+function cubeFaces(phase) {
+  return Object.freeze({
+    px: skyCubeAsset(phase, 'px'),
+    nx: skyCubeAsset(phase, 'nx'),
+    py: skyCubeAsset(phase, 'py'),
+    ny: skyCubeAsset(phase, 'ny'),
+    pz: skyCubeAsset(phase, 'pz'),
+    nz: skyCubeAsset(phase, 'nz'),
+  });
+}
+
+/** Número de fases del ciclo (10). */
+export const DAY_CYCLE_LENGTH = DAY_CYCLE.length;
+
+/**
+ * Cielos cuadrados de respaldo (jsdom, fallbacks) y variantes del refugio 2.5D.
+ * Se mantienen publicados desde media/image/Elements_*.
+ */
 export const SKY_TEXTURES = Object.freeze({
   day: skyAsset('day'),
   dayAlt: skyAsset('sunset-2'),
   sunset: skyAsset('sunset'),
   night: skyAsset('night'),
-  // Reparto por zona (amaneceres cálidos en la costa, celajes altos en la sierra).
-  platja: skyAsset('day'),
-  port: skyAsset('sunset-2'),
-  marjal: skyAsset('sunset'),
-  riu: skyAsset('sunset'),
-  casc: skyAsset('sunset-2'),
-  montduver: skyAsset('day'),
 });
 
 /**
- * Recursos concretos para las tres variantes de suelo del refugio.
- * También aquí se abandona la foto de satélite: las losetas usan los mismos
- * materiales de hierba, arena y tierra que el mundo 3D.
+ * Recursos concretos para las tres variantes de suelo y cielo del refugio 2.5D.
+ * El cielo usa ahora los panoramas reales del ciclo (mediodía, ocaso, noche).
  */
 export const SHELTER_TEXTURES = Object.freeze({
   ground: Object.freeze({
@@ -162,43 +219,44 @@ export const SHELTER_TEXTURES = Object.freeze({
     tierra: materialAsset('earth'),
   }),
   sky: Object.freeze({
-    dia: SKY_TEXTURES.day,
-    atardecer: SKY_TEXTURES.sunset,
-    noche: SKY_TEXTURES.night,
+    dia: skyPanoAsset('mediodia'),
+    atardecer: skyPanoAsset('ocaso'),
+    noche: skyPanoAsset('noche'),
   }),
 });
 
 /* ------------------------------------------------------------------ suelos */
+
 /*
- * El terreno ya no se pinta con la foto de satélite: cada hábitat combina
- * materiales propios (arena, tierra, hierba, roca…) con un reparto por altura
- * y pendiente, de modo que la montaña muestra roca en las fuertes pendientes y
- * la marjal mantiene el verde encharcado.
+ * El terreno se pinta con los materiales fotográficos de media/textures: cada
+ * hábitat combina materiales propios (arena, tierra, hierba, roca…) con un
+ * reparto por altura y pendiente, de modo que la montaña muestra roca en las
+ * fuertes pendientes y la marjal mantiene el verde encharcado.
  */
 export const GROUND_STYLES = Object.freeze({
   platja: Object.freeze({
     low: 'sand', mid: 'sand', high: 'scrub', steep: 'rock',
-    tint: 0xf0dcb0, repeat: 16, waterTint: 0x2e93a8, flatShading: false,
+    tint: 0xf6ecd2, repeat: 16, waterTint: 0x9fd8d4, flatShading: false,
   }),
   port: Object.freeze({
     low: 'stone', mid: 'stone', high: 'stone', steep: 'stone',
-    tint: 0xb9b4a6, repeat: 14, waterTint: 0x1d5869, flatShading: false,
+    tint: 0xd8d5cc, repeat: 14, waterTint: 0x8fc4cc, flatShading: false,
   }),
   marjal: Object.freeze({
     low: 'marsh', mid: 'reedbed', high: 'grass', steep: 'earth',
-    tint: 0xa8c07c, repeat: 15, waterTint: 0x256658, flatShading: true,
+    tint: 0xd6e0b2, repeat: 15, waterTint: 0x9fc9b4, flatShading: true,
   }),
   riu: Object.freeze({
     low: 'gravel', mid: 'grass', high: 'meadow', steep: 'rock',
-    tint: 0xb2c096, repeat: 15, waterTint: 0x31695f, flatShading: false,
+    tint: 0xd2d8b8, repeat: 15, waterTint: 0xa4d2c2, flatShading: false,
   }),
   casc: Object.freeze({
     low: 'cobble', mid: 'cobble', high: 'stone', steep: 'stone',
-    tint: 0xcfc4ad, repeat: 18, waterTint: 0x3ab4c8, flatShading: false,
+    tint: 0xe0d7c2, repeat: 18, waterTint: 0x9ed2dc, flatShading: false,
   }),
   montduver: Object.freeze({
     low: 'scrub', mid: 'forest', high: 'rock', steep: 'rock',
-    tint: 0xb3b39a, repeat: 13, waterTint: 0x2f6f78, flatShading: true,
+    tint: 0xd2d2bc, repeat: 13, waterTint: 0x9cc8ce, flatShading: true,
   }),
 });
 
@@ -269,11 +327,12 @@ export const SHELTER_TREE_SPRITES = Object.freeze([
 ]);
 
 /* ------------------------------------------------------------------ modelos de atrezo */
+
 /**
  * Modelos `.glb` generados por `scripts/gen-props.mjs`. Son piezas singulares
  * (hitos y mobiliario) con materiales nombrados (`prop.wood`, `prop.stone`…)
  * que el motor reemplaza en caliente por materiales texturizados con las
- * imágenes adaptadas de `media/`.
+ * imágenes adaptadas de `media/textures`.
  */
 export const PROP_MODELS = Object.freeze({
   fishingBoat: propModel('boat-fishing'),

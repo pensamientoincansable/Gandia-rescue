@@ -1,13 +1,14 @@
 import React from 'react';
 import {
-  Zap, Volume2, Sun, Eye, Navigation, Shield, User, Camera, ArrowUp, ArrowDown, ArrowLeft, ArrowRight,
+  Zap, Volume2, Sun, Moon, Eye, Navigation, Shield, User, Camera, ArrowUp, ArrowDown, ArrowLeft, ArrowRight,
   Radio, Disc,
 } from 'lucide-react';
 
 /**
  * Panel de control HUD de la Furgoneta de Rescate 3D.
  * Incluye velocímetro digital, marchas, botones de sirena, faros, claxon,
- * selector de cámaras y controles táctiles en pantalla para dispositivos móviles.
+ * selector de cámaras, reloj del ciclo día/noche y controles táctiles en
+ * pantalla para dispositivos móviles.
  */
 
 export default function VanControlsHUD({
@@ -24,6 +25,10 @@ export default function VanControlsHUD({
   isMobile = false,
   onVirtualInput,
   t,
+  phaseId = null,
+  onCycleTime,
+  cycleAuto = false,
+  onToggleCycleAuto,
 }) {
   const isReverse = speedKmh < 0;
   const absSpeed = Math.abs(speedKmh);
@@ -114,6 +119,19 @@ export default function VanControlsHUD({
         >
           {isFootMode ? <Navigation size={17} /> : <User size={17} />}
           <span>{isFootMode ? 'Subir a Van' : 'Bajar a Pie'}</span>
+        </button>
+
+        <button
+          type="button"
+          className={`van-tool-btn van-tool-btn--time ${cycleAuto ? 'is-active' : ''}`}
+          onClick={onCycleTime}
+          title="Avanzar la hora del día [T] · ciclo automático [Y]"
+        >
+          {phaseId === 'noche' || phaseId === 'madrugada' ? <Moon size={17} /> : <Sun size={17} />}
+          <span>
+            {phaseId ? (t?.(`phase_${phaseId}`) ?? phaseId) : (t?.('timeClock') ?? 'Hora')}
+            {cycleAuto ? ' ▸' : ''}
+          </span>
         </button>
       </div>
 

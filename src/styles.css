@@ -1233,6 +1233,16 @@ kbd { min-width: 18px; height: 18px; display: grid; place-items: center; border:
   border-color: #00a88f;
   color: #7ee0c9;
 }
+/* Botón de hora del ciclo día/noche: acento cálido de sol/luna. */
+.van-tool-btn--time {
+  border-color: rgba(255, 205, 130, 0.35);
+  color: rgba(255, 224, 170, 0.92);
+}
+.van-tool-btn--time.is-active {
+  background: rgba(255, 190, 100, 0.18);
+  border-color: rgba(255, 205, 130, 0.7);
+}
+
 .van-tool-btn.is-siren {
   background: rgba(240, 111, 60, 0.25);
   border-color: var(--orange);

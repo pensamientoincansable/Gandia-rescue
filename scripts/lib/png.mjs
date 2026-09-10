@@ -59,8 +59,10 @@ export function decodePng(path) {
         interlace: body[12],
       };
       bitDepth = header.depth;
-      if (header.interlace !== 0) throw new Error(`${path}: PNG entrelazado no soportado`);
-      if (header.depth !== 8) throw new Error(`${path}: profundidad ${header.depth} bits no soportada`);
+    if (header.interlace !== 0) throw new Error(`${path}: PNG entrelazado no soportado`);
+    if (header.depth !== 8 && header.depth !== 16) {
+      throw new Error(`${path}: profundidad ${header.depth} bits no soportada`);
+    }
     } else if (type === 'PLTE') {
       palette = body;
     } else if (type === 'IDAT') {
@@ -78,7 +80,10 @@ export function decodePng(path) {
   if (!sourceChannels) throw new Error(`${path}: tipo de color ${header.colorType} no soportado`);
   if (header.colorType === 3 && !palette) throw new Error(`${path}: paleta ausente`);
 
-  const bytesPerPixel = sourceChannels;
+  // Los PNG de 16 bits almacenan cada canal en 2 bytes (big endian): se avanza
+  // de 2 en 2 y se conserva el byte alto, que ya representa 8 bits de precisión.
+  const step = bitDepth === 16 ? 2 : 1;
+  const bytesPerPixel = sourceChannels * step;
   const stride = header.width * bytesPerPixel;
   const pixels = Buffer.alloc(header.height * stride);
   let previous = Buffer.alloc(stride);
@@ -114,6 +119,7 @@ export function decodePng(path) {
   }
 
   // Normalizamos siempre a RGBA de 8 bits para simplificar el resto del proceso.
+  // Los PNG de 16 bits se reducen tomando el byte alto de cada canal.
   const rgba = new Uint8Array(header.width * header.height * 4);
   for (let i = 0, p = 0; i < header.width * header.height; i += 1, p += bytesPerPixel) {
     if (header.colorType === 0) {
@@ -125,7 +131,7 @@ export function decodePng(path) {
       rgba[i * 4] = pixels[p];
       rgba[i * 4 + 1] = pixels[p];
       rgba[i * 4 + 2] = pixels[p];
-      rgba[i * 4 + 3] = pixels[p + 1];
+      rgba[i * 4 + 3] = pixels[p + step];
     } else if (header.colorType === 3) {
       const index = pixels[p] * 3;
       rgba[i * 4] = palette[index];
@@ -134,9 +140,9 @@ export function decodePng(path) {
       rgba[i * 4 + 3] = 255;
     } else {
       rgba[i * 4] = pixels[p];
-      rgba[i * 4 + 1] = pixels[p + 1];
-      rgba[i * 4 + 2] = pixels[p + 2];
-      rgba[i * 4 + 3] = sourceChannels === 4 ? pixels[p + 3] : 255;
+      rgba[i * 4 + 1] = pixels[p + step];
+      rgba[i * 4 + 2] = pixels[p + step * 2];
+      rgba[i * 4 + 3] = sourceChannels === 4 ? pixels[p + step * 3] : 255;
     }
   }
 
@@ -144,21 +150,41 @@ export function decodePng(path) {
 }
 
 /**
- * Redimensiona un buffer RGBA con filtro de caja (media de área). Es lento pero
- * sin dependencias y suficiente para bajar de 512² a 128-256².
+ * Recorta una región rectangular de un buffer RGBA (para rebanar el cruz
+ * horizontal de los cubemaps en sus 6 caras).
  * @param {{width:number,height:number,data:Uint8Array}} image
- * @param {number} size Ancho y alto de destino (se fuerzan imágenes cuadradas).
+ * @param {number} x Píxel de origen (esquina superior izquierda).
+ * @param {number} y Píxel de origen (esquina superior izquierda).
+ * @param {number} width Ancho de la región.
+ * @param {number} height Alto de la región.
  */
-export function resizeSquare(image, size) {
-  if (image.width === size && image.height === size) return image;
-  const out = new Uint8Array(size * size * 4);
-  const scaleX = image.width / size;
-  const scaleY = image.height / size;
+export function cropRegion(image, x, y, width, height) {
+  const out = new Uint8Array(width * height * 4);
+  for (let row = 0; row < height; row += 1) {
+    const source = ((y + row) * image.width + x) * 4;
+    out.set(image.data.subarray(source, source + width * 4), row * width * 4);
+  }
+  return { width, height, data: out, channels: 4 };
+}
 
-  for (let y = 0; y < size; y += 1) {
+/**
+ * Redimensiona un buffer RGBA a un ancho y alto arbitrarios con filtro de caja
+ * (media de área). Es lento pero sin dependencias y suficiente para bajar de
+ * 2048×1024 a 512-1024 px o de una cara de 512² a 256².
+ * @param {{width:number,height:number,data:Uint8Array}} image
+ * @param {number} width Ancho de destino.
+ * @param {number} height Alto de destino.
+ */
+export function resizeImage(image, width, height) {
+  if (image.width === width && image.height === height) return image;
+  const out = new Uint8Array(width * height * 4);
+  const scaleX = image.width / width;
+  const scaleY = image.height / height;
+
+  for (let y = 0; y < height; y += 1) {
     const y0 = Math.floor(y * scaleY);
     const y1 = Math.max(y0 + 1, Math.floor((y + 1) * scaleY));
-    for (let x = 0; x < size; x += 1) {
+    for (let x = 0; x < width; x += 1) {
       const x0 = Math.floor(x * scaleX);
       const x1 = Math.max(x0 + 1, Math.floor((x + 1) * scaleX));
 
@@ -178,7 +204,7 @@ export function resizeSquare(image, size) {
         }
       }
 
-      const o = (y * size + x) * 4;
+      const o = (y * width + x) * 4;
       out[o] = Math.round(r / n);
       out[o + 1] = Math.round(g / n);
       out[o + 2] = Math.round(b / n);
@@ -186,13 +212,27 @@ export function resizeSquare(image, size) {
     }
   }
 
-  return { width: size, height: size, data: out, channels: 4 };
+  return { width, height, data: out, channels: 4 };
+}
+
+/**
+ * Redimensiona un buffer RGBA con filtro de caja (media de área). Es lento pero
+ * sin dependencias y suficiente para bajar de 512² a 128-256².
+ * @param {{width:number,height:number,data:Uint8Array}} image
+ * @param {number} size Ancho y alto de destino (se fuerzan imágenes cuadradas).
+ */
+export function resizeSquare(image, size) {
+  return resizeImage(image, size, size);
 }
 
 /**
  * Codifica un buffer RGBA como PNG. Si todos los píxeles son opacos se guarda
  * como RGB (colorType 2), que pesa bastante menos; en caso contrario se usa
  * RGBA (colorType 6).
+ *
+ * Cada fila se comprime con el filtro estándar (None/Sub/Up/Average/Paeth) que
+ * menor suma absoluta produzca —filtrado adaptativo—: en imágenes fotográficas
+ * como los cielos reduce el peso un 30-45 % frente al filtro fijo None.
  *
  * @param {{width:number,height:number,data:Uint8Array}} image
  * @returns {Buffer}
@@ -204,21 +244,65 @@ export function encodePng(image) {
     if (data[i] !== 255) { opaque = false; break; }
   }
   const channels = opaque ? 3 : 4;
-  const stride = width * channels;
-  const raw = Buffer.alloc((stride + 1) * height);
+  const stride = width * channels;      // bytes por fila en la salida
+  const sourceStride = width * 4;       // `data` siempre es RGBA
+  const bytesPerPixel = channels;
 
+  const filteredRows = [];
+  const packedRows = []; // filas originales empaquetadas: la referencia (b, c)
+  // de los filtros Up/Average/Paeth es la fila SIN filtrar, no la codificada.
   for (let y = 0; y < height; y += 1) {
-    const rowStart = y * (stride + 1);
-    raw[rowStart] = 0; // filtro None
-    for (let x = 0; x < width; x += 1) {
-      const s = (y * width + x) * 4;
-      const d = rowStart + 1 + x * channels;
-      raw[d] = data[s];
-      raw[d + 1] = data[s + 1];
-      raw[d + 2] = data[s + 2];
-      if (!opaque) raw[d + 3] = data[s + 3];
+    // Se desentrelaza la fila RGBA al formato de salida (RGB descarta el alfa).
+    const source = data.subarray(y * sourceStride, (y + 1) * sourceStride);
+    const packed = Buffer.alloc(stride);
+    if (opaque) {
+      for (let x = 0; x < width; x += 1) {
+        packed[x * 3] = source[x * 4];
+        packed[x * 3 + 1] = source[x * 4 + 1];
+        packed[x * 3 + 2] = source[x * 4 + 2];
+      }
+    } else {
+      packed.set(source);
     }
+    packedRows.push(packed);
+    const previous = y > 0 ? packedRows[y - 1] : null;
+    let best = null;
+    let bestScore = Infinity;
+    let bestFilter = 0;
+    for (let filter = 0; filter <= 4; filter += 1) {
+      const candidate = Buffer.alloc(stride);
+      let score = 0;
+      for (let x = 0; x < stride; x += 1) {
+        const a = x >= bytesPerPixel ? packed[x - bytesPerPixel] : 0;
+        const b = previous ? previous[x] : 0;
+        const c = previous && x >= bytesPerPixel ? previous[x - bytesPerPixel] : 0;
+        let value = packed[x];
+        if (filter === 1) value -= a;
+        else if (filter === 2) value -= b;
+        else if (filter === 3) value -= (a + b) >> 1;
+        else if (filter === 4) {
+          const pa = Math.abs(b - c);
+          const pb = Math.abs(a - c);
+          const pc = Math.abs(a + b - 2 * c);
+          value -= pa <= pb && pa <= pc ? a : pb <= pc ? b : c;
+        }
+        candidate[x] = value & 0xff;
+        const normalized = value & 0xff;
+        score += Math.min(normalized, 256 - normalized);
+      }
+      if (score < bestScore) {
+        bestScore = score;
+        best = candidate;
+        bestFilter = filter;
+      }
+    }
+    const line = Buffer.alloc(stride + 1);
+    line[0] = bestFilter;
+    best.copy(line, 1);
+    filteredRows.push(line);
   }
+
+  const raw = Buffer.concat(filteredRows);
 
   const chunk = (type, body) => {
     const length = Buffer.alloc(4);
@@ -247,12 +331,18 @@ export function encodePng(image) {
 }
 
 /**
- * Lee un PNG de `media/`, lo reescala a `size` y lo escribe en `destination`.
- * Devuelve el tamaño final en bytes para poder informar del ahorro.
+ * Lee un PNG de `media/`, lo reescala y lo codifica. Devuelve el buffer PNG
+ * final para poder informar del ahorro.
+ *
+ * @param {string} from Ruta de origen.
+ * @param {number|[number, number]} size Destino: un número (cuadrada) o un
+ *   par [ancho, alto] para imágenes no cuadradas (panoramas).
+ * @returns {Buffer}
  */
 export function adaptPng(from, to, size) {
   const decoded = decodePng(from);
-  const resized = resizeSquare(decoded, size);
+  const [width, height] = Array.isArray(size) ? size : [size, size];
+  const resized = resizeImage(decoded, width, height);
   const buffer = encodePng(resized);
   return buffer;
 }

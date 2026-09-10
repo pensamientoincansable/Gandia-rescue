@@ -462,9 +462,10 @@ export class TerrainBuilder {
   }
 
   /**
-   * Construye la red de rutas practicables. Cada tramo conserva la fotografía
-   * satelital de la zona (`createSatelliteRouteTexture`), que es la única
-   * imagen aérea que sigue usando el mundo 3D.
+   * Construye la red de rutas practicables. Cada tramo se pinta con los
+   * materiales fotográficos de media/textures (`createSatelliteRouteTexture`):
+   * asfalto de pizarra en carreteras, adoquín en el casco histórico y tierra
+   * apisonada con rodadas en los caminos rurales.
    */
   buildRouteNetwork(zoneId) {
     if (zoneId === 'platja') {
@@ -594,7 +595,7 @@ export class TerrainBuilder {
       // Mar Mediterráneo sobre la orilla de la playa
       const seaGeo = new THREE.PlaneGeometry(120, 300, 24, 40);
       seaGeo.rotateX(-Math.PI / 2);
-      const seaMat = waterMaterial(0x2e93a8, true, [6, 12]);
+      const seaMat = waterMaterial(0xeafaf6, true, [6, 12]);
       const sea = new THREE.Mesh(seaGeo, seaMat);
       sea.position.set(116, -0.35, 0);
       sea.userData.noCollide = true;
@@ -604,7 +605,7 @@ export class TerrainBuilder {
       // Dársena del puerto de Gandía
       const portWaterGeo = new THREE.PlaneGeometry(140, 160, 20, 24);
       portWaterGeo.rotateX(-Math.PI / 2);
-      const portWaterMat = waterMaterial(0x1d5869, true, [5, 6]);
+      const portWaterMat = waterMaterial(0xcfe8ec, true, [5, 6]);
       const water = new THREE.Mesh(portWaterGeo, portWaterMat);
       water.position.set(80, -0.55, 0);
       water.userData.noCollide = true;
@@ -614,7 +615,7 @@ export class TerrainBuilder {
       // Ullals de la Marjal
       const ullalGeo = new THREE.PlaneGeometry(32, 48, 12, 16);
       ullalGeo.rotateX(-Math.PI / 2);
-      const ullalMat = waterMaterial(0x256658, false, [3, 4]);
+      const ullalMat = waterMaterial(0xcfe6d8, false, [3, 4]);
       const ullal = new THREE.Mesh(ullalGeo, ullalMat);
       ullal.position.set(30, -0.45, 20);
       ullal.userData.noCollide = true;
@@ -630,7 +631,7 @@ export class TerrainBuilder {
         posAttr.setX(i, posAttr.getX(i) + Math.sin(localZ * 0.03) * 8);
       }
       riverGeo.computeVertexNormals();
-      const riverMat = waterMaterial(0x31695f, false, [3, 16]);
+      const riverMat = waterMaterial(0xd2ecdf, false, [3, 16]);
       const river = new THREE.Mesh(riverGeo, riverMat);
       river.position.set(0, -0.9, 0);
       river.userData.noCollide = true;
