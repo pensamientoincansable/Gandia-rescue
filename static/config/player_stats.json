@@ -59,6 +59,11 @@
     "boundsMin": -115,
     "boundsMax": 115,
     "maxDeltaSeconds": 0.06,
+    "dayCycle": {
+      "secondsPerPhase": 45,
+      "transitionSeconds": 3,
+      "autoByDefault": false
+    },
     "defaultSpawn": { "x": -15, "z": -70, "heading": 0 },
     "spawnPoints": {
       "platja": { "x": -15, "z": -70, "heading": 0 },

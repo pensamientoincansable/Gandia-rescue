@@ -1,21 +1,22 @@
 import * as THREE from 'three';
 import {
-  GROUND_STYLES, MATERIAL_SETTINGS, MATERIAL_TEXTURES, SATELLITE_TEXTURES, SKY_TEXTURES,
+  DAY_CYCLE, GROUND_STYLES, MATERIAL_SETTINGS, MATERIAL_TEXTURES,
+  SKY_TEXTURES, dayCycleIndex,
 } from './WorldAssets.js';
 
 /**
  * Generador de texturas optimizadas para Three.js.
  *
- * Regla de oro del mundo 3D: **la fotografía satelital sólo se usa en las rutas
- * practicables** (carreteras, caminos y puentes). Todo lo demás —el suelo de
- * cada hábitat, el atrezo, los hitos y la vegetación— se construye con
- * materiales propios a partir de las imágenes de `media/` adaptadas por
- * `scripts/sync-world-assets.mjs`.
+ * Regla de oro del mundo 3D: **todo se pinta con la biblioteca fotográfica de
+ * `media/textures`** —asfalto de pizarra para las rutas, adoquín para el casco
+ * histórico, tierra apisonada para los caminos, y los mapas de agua para el
+ * mar y el Serpis—. Cada textura se devuelve de inmediato (base procedural,
+ * válida en jsdom y sin red) y se *enriquece* en cuanto la imagen termina de
+ * descargarse. Así el mundo nunca espera a la red y, cuando llega, gana el
+ * detalle de las fotos originales.
  *
- * Cada textura se devuelve de inmediato (base procedural, válida en jsdom y sin
- * red) y se *enriquece* en cuanto la imagen termina de descargarse: se pintan
- * los mapas reales sobre el lienzo y se marca `needsUpdate`. Así el mundo nunca
- * espera a la red y, cuando llega, gana el detalle de las fotos originales.
+ * Los cielos del ciclo día/noche se sirven de `Panorama/` (cúpula
+ * equirrectangular) y `Cubemap/` (6 caras para la iluminación de entorno).
  */
 
 const textureCache = new Map();
@@ -255,7 +256,9 @@ export function createGroundTexture(zoneId) {
     let painted = false;
     images.filter(Boolean).forEach((image, index) => {
       ctx.save();
-      ctx.globalAlpha = index === 0 ? 0.55 : 0.3;
+      // Los mapas fotográficos de media/textures ya traen el detalle real:
+      // la capa base domina y las siguientes aportan variación por altura.
+      ctx.globalAlpha = index === 0 ? 0.82 : 0.3;
       ctx.globalCompositeOperation = index === 0 ? 'multiply' : 'overlay';
       for (let y = 0; y < size; y += 256) {
         for (let x = 0; x < size; x += 256) ctx.drawImage(image, x, y, 256, 256);
@@ -272,30 +275,32 @@ export function createGroundTexture(zoneId) {
 /* ------------------------------------------------------------------ rutas */
 
 /**
- * Textura de ruta practicable. Es la **única** superficie del mundo 3D que
- * conserva la fotografía satelital: sobre el vuelo de la zona se marca la
- * calzada, los arcenes y la señalización horizontal, de modo que el trazado
- * mantiene la lectura real del territorio.
+ * Textura de ruta practicable construida con los materiales fotográficos de
+ * `media/textures`: asfalto de pizarra en carreteras, adoquín en el casco
+ * histórico y tierra apisonada con rodadas en los caminos rurales. La señale-
+ * tación horizontal se pinta encima; el parámetro `zoneId` se mantiene por
+ * compatibilidad con las llamadas existentes del TerrainBuilder.
  */
 export function createSatelliteRouteTexture(zoneId, { lanes = true, dirt = false, repeatX = 1, repeatY = 6 } = {}) {
-  const cacheKey = `route_${zoneId}_${dirt ? 'dirt' : 'asphalt'}_${lanes ? 'l' : 'n'}_${repeatX}x${repeatY}`;
+  const mode = dirt ? 'dirt' : (zoneId === 'casc' ? 'cobble' : 'asphalt');
+  const cacheKey = `route_${mode}_${lanes ? 'l' : 'n'}_${repeatX}x${repeatY}`;
   if (textureCache.has(cacheKey)) return textureCache.get(cacheKey);
 
   const size = 512;
   const surface = createCanvas(size, size);
 
   if (!surface) {
-    const tex = createFallbackTexture(dirt ? 120 : 45, dirt ? 100 : 48, dirt ? 78 : 50);
+    const tex = createFallbackTexture(dirt ? 122 : 52, dirt ? 104 : 54, dirt ? 80 : 58);
     textureCache.set(cacheKey, tex);
     return tex;
   }
 
   const { canvas, ctx } = surface;
-  // Base siempre válida (asfalto o tierra apisonada) por si el satélite falla.
-  ctx.fillStyle = dirt ? '#7a6144' : '#33363a';
+  // Base siempre válida por si la foto no llega a descargarse.
+  ctx.fillStyle = dirt ? '#7a6144' : (mode === 'cobble' ? '#6f6a62' : '#34373b');
   ctx.fillRect(0, 0, size, size);
   addNoise(ctx, size, size, dirt ? 0.12 : 0.09, dirt ? '#4a3a26' : '#111111');
-  paintLaneMarkings(ctx, size, { lanes, dirt });
+  paintLaneMarkings(ctx, size, { lanes: lanes && mode !== 'cobble', dirt });
 
   const texture = new THREE.CanvasTexture(canvas);
   texture.colorSpace = THREE.SRGBColorSpace;
@@ -306,26 +311,33 @@ export function createSatelliteRouteTexture(zoneId, { lanes = true, dirt = false
   texture.needsUpdate = true;
   textureCache.set(cacheKey, texture);
 
-  // Capa satelital: el vuelo real de la zona como arcén, con la calzada
-  // marcada encima. Sólo las rutas la usan.
-  loadImageElement(SATELLITE_TEXTURES[zoneId] ?? SATELLITE_TEXTURES.platja).then((image) => {
+  // Capa fotográfica: el mapa real de media/textures en mosaico, con la
+  // calzada y sus marcas pintadas encima.
+  const source = MATERIAL_TEXTURES[dirt ? 'earth' : (mode === 'cobble' ? 'cobble' : 'asphalt')];
+  loadImageElement(source).then((image) => {
     if (!image) return;
+
     ctx.save();
-    ctx.globalAlpha = 0.55;
-    ctx.drawImage(image, 0, 0, size, size);
+    ctx.globalAlpha = dirt ? 0.92 : 1;
+    const tileSize = mode === 'cobble' ? 128 : 256;
+    for (let y = 0; y < size; y += tileSize) {
+      for (let x = 0; x < size; x += tileSize) ctx.drawImage(image, x, y, tileSize, tileSize);
+    }
     ctx.restore();
 
-    // Banda de rodadura: oscurece el centro y deja ver el entorno en los bordes.
-    const bandWidth = size * (dirt ? 0.52 : 0.62);
-    const band = (size - bandWidth) / 2;
-    ctx.save();
-    ctx.globalAlpha = dirt ? 0.42 : 0.72;
-    ctx.fillStyle = dirt ? '#6d5637' : '#2f3235';
-    ctx.fillRect(band, 0, bandWidth, size);
-    ctx.restore();
+    if (mode === 'asphalt') {
+      // Banda de rodadura: oscurece el centro de la calzada.
+      const bandWidth = size * 0.62;
+      const band = (size - bandWidth) / 2;
+      ctx.save();
+      ctx.globalAlpha = 0.38;
+      ctx.fillStyle = '#22252a';
+      ctx.fillRect(band, 0, bandWidth, size);
+      ctx.restore();
+    }
 
     addNoise(ctx, size, size, 0.07, '#000000');
-    paintLaneMarkings(ctx, size, { lanes, dirt });
+    paintLaneMarkings(ctx, size, { lanes: lanes && mode !== 'cobble', dirt });
     texture.needsUpdate = true;
   });
 
@@ -363,11 +375,82 @@ export function createRoadTexture() {
 /* ------------------------------------------------------------------ cielo */
 
 /**
- * Cielo de nubes a partir de los mapas de Elements entregados en /media.
- * El mapa se repite sólo en horizontal sobre la cúpula, evitando una costura
- * visible y conservando el degradado procedural como fallback de seguridad.
+ * Textura de una fase del ciclo día/noche a partir del panorama
+ * equirrectangular de `Panorama/` (publicado en world/sky/pano). Se fija con
+ * ClampToEdge para evitar una costura visible en la cúpula. `phaseId` acepta
+ * los identificadores de DAY_CYCLE ('noche'…'mediodia'…) y también los
+ * históricos de zona ('platja', 'marjal'…), que se mapean al cielo del ciclo.
  */
-export function createSkyTexture(zoneId = 'platja') {
+export function createPanoramaTexture(phaseId = 'mediodia') {
+  const phase = DAY_CYCLE[dayCycleIndex(phaseId)] ?? DAY_CYCLE[5];
+  const cacheKey = `pano_${phase.id}`;
+  if (textureCache.has(cacheKey)) return textureCache.get(cacheKey);
+
+  const supplied = createMediaTexture(cacheKey, phase.pano, {
+    repeat: [1, 1],
+    wrapT: THREE.ClampToEdgeWrapping,
+    fallbackColor: 0x8db8d8,
+  });
+  if (supplied) {
+    supplied.wrapS = THREE.ClampToEdgeWrapping;
+    return supplied;
+  }
+
+  const fallback = createFallbackTexture(141, 184, 216);
+  fallback.wrapS = THREE.ClampToEdgeWrapping;
+  textureCache.set(cacheKey, fallback);
+  return fallback;
+}
+
+/**
+ * Cubemap de iluminación de una fase del ciclo: las 6 caras rebanadas de
+ * `Cubemap/` (publicadas en world/sky/cube). Devuelve null si no hay DOM.
+ * El cubemap se entrega por `onLoad` sólo cuando las 6 caras han cargado, de
+ * modo que la escena nunca recibe un entorno a medias.
+ */
+export function createEnvironmentCubeTexture(phaseId = 'mediodia', onLoad = null) {
+  if (typeof document === 'undefined') return null;
+  const phase = DAY_CYCLE[dayCycleIndex(phaseId)] ?? DAY_CYCLE[5];
+  const cacheKey = `env_${phase.id}`;
+  if (textureCache.has(cacheKey)) {
+    const cached = textureCache.get(cacheKey);
+    if (cached?.__ready && onLoad) onLoad(cached);
+    return cached;
+  }
+
+  const cube = new THREE.CubeTexture(Object.values(phase.env));
+  cube.colorSpace = THREE.SRGBColorSpace;
+  const loader = new THREE.ImageLoader();
+  let loaded = 0;
+  let anyFailed = false;
+
+  Object.values(phase.env).forEach((url, index) => {
+    loader.load(
+      url,
+      (image) => {
+        cube.images[index] = image;
+        loaded += 1;
+        if (loaded === 6 && !anyFailed) {
+          cube.needsUpdate = true;
+          cube.__ready = true;
+          if (onLoad) onLoad(cube);
+        }
+      },
+      undefined,
+      () => { anyFailed = true; },
+    );
+  });
+
+  textureCache.set(cacheKey, cube);
+  return cube;
+}
+
+/**
+ * Compatibilidad: cielo cuadrado de respaldo de `media/image` (Elementos_*).
+ * El ciclo día/noche usa createPanoramaTexture; esto queda para el refugio y
+ * cualquier superficie plana que pida un "cielo" sencillo.
+ */
+export function createSkyTexture(zoneId = 'day') {
   const cacheKey = `sky_${zoneId}`;
   if (textureCache.has(cacheKey)) return textureCache.get(cacheKey);
   const supplied = createMediaTexture(cacheKey, SKY_TEXTURES[zoneId] ?? SKY_TEXTURES.day, {
@@ -465,11 +548,24 @@ export function createFoliageMaterial(textureUrl, { alphaTest = 0.42, tint = 0xf
 
 /* ------------------------------------------------------------------ agua */
 
-/** Textura de agua marina / fluvial con cáusticas y brillos */
+/**
+ * Agua marina y fluvial a partir de los mapas fotográficos de
+ * `media/textures/Elements`. El mapa se desplaza por tiempo en el
+ * TerrainBuilder (`map.offset`), así que la foto real ya anima las olas. Si no
+ * hay DOM o la imagen no llega, se mantiene la base procedural de cáusticas.
+ */
 export function createWaterTexture(isSea = true, { repeat = [4, 4] } = {}) {
   const cacheKey = `tex_water_${isSea ? 'sea' : 'river'}_${repeat.join('x')}`;
   if (textureCache.has(cacheKey)) return textureCache.get(cacheKey);
 
+  const kind = isSea ? 'water-sea' : 'water-river';
+  const supplied = createMediaTexture(cacheKey, MATERIAL_TEXTURES[kind], {
+    repeat,
+    fallbackColor: isSea ? 0x2e93a8 : 0x2b5f54,
+  });
+  if (supplied) return supplied;
+
+  // Fallback procedural (jsdom / sin red): cáusticas onduladas.
   const surface = createCanvas(512, 512);
   if (!surface) {
     const tex = createFallbackTexture(isSea ? 30 : 45, isSea ? 100 : 110, isSea ? 130 : 90);
@@ -495,6 +591,7 @@ export function createWaterTexture(isSea = true, { repeat = [4, 4] } = {}) {
   }
 
   const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
   texture.wrapS = THREE.RepeatWrapping;
   texture.wrapT = THREE.RepeatWrapping;
   texture.repeat.set(...repeat);

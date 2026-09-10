@@ -9,6 +9,7 @@ import DialogueModal from '../components/DialogueModal.jsx';
 import ClueModal from '../components/ClueModal.jsx';
 import PhotoMode3D from '../components/PhotoMode3D.jsx';
 import VanControlsHUD from '../components/VanControlsHUD.jsx';
+import { nextDayCyclePhaseId } from '../three/WorldAssets.js';
 import {
   CareSheet, CompassBar, SuccessToast, Toast, TravelMap, XpBar, ZonePhotos, ModalShell,
 } from '../components/common.jsx';
@@ -34,6 +35,9 @@ export default function ExploreMode({
   const [activeDialogueNpc, setActiveDialogueNpc] = useState(null);
   const [activeClue, setActiveClue] = useState(null);
   const [photoModeActive, setPhotoModeActive] = useState(false);
+  // Ciclo día/noche: fase activa del cielo y avance automático.
+  const [timePhase, setTimePhase] = useState(null);
+  const [cycleAuto, setCycleAuto] = useState(false);
   const [success, setSuccess] = useState(null);
 
   // Estados de control de la Furgoneta 3D
@@ -97,10 +101,11 @@ export default function ExploreMode({
     return spots;
   }, [zoneId, zoneCases, save.cases, t]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const handleLookUpdate = useCallback(({ headingDeg: hDeg, speedKmh: spd, isFootMode: foot }) => {
+  const handleLookUpdate = useCallback(({ headingDeg: hDeg, speedKmh: spd, isFootMode: foot, phaseId: phase }) => {
     setHeadingDeg(hDeg);
     setSpeedKmh(spd);
     setIsFootMode(foot);
+    if (phase) setTimePhase((current) => (current === phase ? current : phase));
   }, []);
 
   const handleInteractAnimal = (caseId, speciesId) => {
@@ -185,6 +190,10 @@ export default function ExploreMode({
         onHonkReady={(fn) => { honkRef.current = fn; }}
         onToggleSiren={() => setSirenActive((v) => !v)}
         onToggleHeadlights={() => setHeadlightsActive((v) => !v)}
+        timePhase={timePhase}
+        onTimePhaseChange={(nextPhase) => setTimePhase(nextPhase)}
+        cycleAuto={cycleAuto}
+        onToggleCycleAuto={(nextAuto) => setCycleAuto(Boolean(nextAuto))}
       />
 
       {/* Visor 360° invisible o en capa de compatibilidad */}
@@ -277,6 +286,9 @@ export default function ExploreMode({
         isMobile={isMobile}
         onVirtualInput={(inp) => setVirtualInput((prev) => ({ ...prev, ...inp }))}
         t={t}
+        phaseId={timePhase}
+        onCycleTime={() => setTimePhase((current) => nextDayCyclePhaseId(current ?? 'mediodia'))}
+        cycleAuto={cycleAuto}
       />
 
       {/* 5. ACCIONES RÁPIDAS INFERIORES */}

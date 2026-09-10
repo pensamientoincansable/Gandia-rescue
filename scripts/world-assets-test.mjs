@@ -12,8 +12,9 @@ import { fileURLToPath } from 'node:url';
 import { FBXLoader } from 'three/examples/jsm/loaders/FBXLoader.js';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import {
-  MATERIAL_SETTINGS, MATERIAL_TEXTURES, PROP_MODELS, SHELTER_TEXTURES,
-  SHELTER_TREE_SPRITES, SKY_TEXTURES, SATELLITE_TEXTURES, TERRAIN_TEXTURES, VEGETATION_ASSETS,
+  DAY_CYCLE, MATERIAL_SETTINGS, MATERIAL_TEXTURES, PROP_MODELS, SHELTER_TEXTURES,
+  SHELTER_TREE_SPRITES, SKY_TEXTURES, SATELLITE_TEXTURES, TERRAIN_TEXTURES,
+  VEGETATION_ASSETS, dayCycleIndex, nextDayCyclePhaseId,
 } from '../src/three/WorldAssets.js';
 import { PROP_TEMPLATES } from '../src/three/PropsLibrary.js';
 
@@ -63,11 +64,26 @@ for (const [assetId, asset] of Object.entries(VEGETATION_ASSETS)) {
   }
 }
 
-console.log('· Satélite reservado a las rutas practicables');
+console.log('· Satélite publicado por compatibilidad');
 for (const [zone, url] of Object.entries(SATELLITE_TEXTURES)) {
-  expect(track(url), `${zone}: imagen satelital disponible para su ruta`);
+  expect(track(url), `${zone}: imagen satelital publicada`);
 }
-expect(TERRAIN_TEXTURES === SATELLITE_TEXTURES, 'el suelo ya no usa satélite (alias de compatibilidad)');
+expect(TERRAIN_TEXTURES === SATELLITE_TEXTURES, 'alias de compatibilidad intacto');
+
+console.log('· Ciclo día/noche (panorama + cubemap por fase)');
+for (const phase of DAY_CYCLE) {
+  expect(track(phase.pano), `${phase.id}: panorama equirrectangular disponible`);
+  for (const [face, url] of Object.entries(phase.env)) {
+    expect(track(url), `${phase.id}: cara ${face} del cubemap disponible`);
+  }
+  expect(phase.sun >= 0 && phase.sun <= 1, `${phase.id}: altura solar normalizada`);
+}
+expect(DAY_CYCLE.length === 10, `el ciclo tiene 10 fases (${DAY_CYCLE.length})`);
+expect(dayCycleIndex('noche') === 0 && dayCycleIndex('mediodia') === 5, 'índices de fase correctos');
+expect(nextDayCyclePhaseId('mediodia') === 'tarde' && nextDayCyclePhaseId('crepusculo') === 'noche', 'fase siguiente correcta');
+for (const [variant, url] of Object.entries(SHELTER_TEXTURES.sky)) {
+  expect(track(url), `refugio/cielo ${variant}: panorama del ciclo disponible`);
+}
 
 console.log('· Materiales de atrezo y suelo');
 for (const [kind, url] of Object.entries(MATERIAL_TEXTURES)) {

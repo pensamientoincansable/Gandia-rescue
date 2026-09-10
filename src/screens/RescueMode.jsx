@@ -9,6 +9,7 @@ import DialogueModal from '../components/DialogueModal.jsx';
 import ClueModal from '../components/ClueModal.jsx';
 import PhotoMode3D from '../components/PhotoMode3D.jsx';
 import VanControlsHUD from '../components/VanControlsHUD.jsx';
+import { nextDayCyclePhaseId } from '../three/WorldAssets.js';
 import {
   CareSheet, CompassBar, LevelUpToast, Radar, SuccessToast, Toast, XpBar, ZonePhotos,
 } from '../components/common.jsx';
@@ -35,6 +36,9 @@ export default function RescueMode({
   const [activeDialogueNpc, setActiveDialogueNpc] = useState(null);
   const [activeClue, setActiveClue] = useState(null);
   const [photoModeActive, setPhotoModeActive] = useState(false);
+  // Ciclo día/noche: fase activa del cielo y avance automático.
+  const [timePhase, setTimePhase] = useState(null);
+  const [cycleAuto, setCycleAuto] = useState(false);
   const [success, setSuccess] = useState(null);
   const [levelUp, setLevelUp] = useState(null);
   const [showMissions, setShowMissions] = useState(!isMobile);
@@ -128,10 +132,11 @@ export default function RescueMode({
     return spots;
   }, [hasGps, geo.position, zone.id, selectedCase, caseDistance, t]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const handleLookUpdate = useCallback(({ headingDeg: hDeg, speedKmh: spd, isFootMode: foot }) => {
+  const handleLookUpdate = useCallback(({ headingDeg: hDeg, speedKmh: spd, isFootMode: foot, phaseId: phase }) => {
     setHeadingDeg(hDeg);
     setSpeedKmh(spd);
     setIsFootMode(foot);
+    if (phase) setTimePhase((current) => (current === phase ? current : phase));
   }, []);
 
   const handleInteractAnimal = (caseId, speciesId) => {
@@ -229,6 +234,10 @@ export default function RescueMode({
         onHonkReady={(fn) => { honkRef.current = fn; }}
         onToggleSiren={() => setSirenActive((v) => !v)}
         onToggleHeadlights={() => setHeadlightsActive((v) => !v)}
+        timePhase={timePhase}
+        onTimePhaseChange={(nextPhase) => setTimePhase(nextPhase)}
+        cycleAuto={cycleAuto}
+        onToggleCycleAuto={(nextAuto) => setCycleAuto(Boolean(nextAuto))}
       />
 
       {/* Capa de compatibilidad para tests */}
@@ -360,6 +369,9 @@ export default function RescueMode({
         isMobile={isMobile}
         onVirtualInput={(inp) => setVirtualInput((prev) => ({ ...prev, ...inp }))}
         t={t}
+        phaseId={timePhase}
+        onCycleTime={() => setTimePhase((current) => nextDayCyclePhaseId(current ?? 'mediodia'))}
+        cycleAuto={cycleAuto}
       />
 
       {/* 6. BARRA DE EQUIPAMIENTO */}

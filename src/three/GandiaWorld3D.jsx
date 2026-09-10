@@ -52,6 +52,10 @@ export default function GandiaWorld3D({
   onToggleSiren,
   onToggleHeadlights,
   onHonkReady,
+  timePhase = null,
+  onTimePhaseChange,
+  cycleAuto = false,
+  onToggleCycleAuto,
 }) {
   const containerRef = useRef(null);
   const canvasRef = useRef(null);
@@ -93,6 +97,22 @@ export default function GandiaWorld3D({
     CYCLE_CAMERA: onCycleCamera,
     TOGGLE_SIREN: onToggleSiren,
     TOGGLE_HEADLIGHTS: onToggleHeadlights,
+    // Ciclo día/noche: T avanza a la siguiente fase del cielo, Y activa el
+    // avance automático. El estado vive en React; la escena se sincroniza
+    // abajo con efectos dedicados.
+    CYCLE_TIME: () => {
+      const atmosphere = atmosphereRef.current;
+      if (!atmosphere) return;
+      const nextId = atmosphere.advancePhase(2);
+      onTimePhaseChange?.(nextId);
+    },
+    TOGGLE_CYCLE: () => {
+      const atmosphere = atmosphereRef.current;
+      if (!atmosphere) return;
+      const next = !atmosphere.cycleEnabled;
+      atmosphere.setCycleEnabled(next);
+      onToggleCycleAuto?.(next);
+    },
   };
 
   const [nearbyTarget, setNearbyTarget] = useState(null); // { type: 'animal'|'npc'|'clue', data }
@@ -258,6 +278,8 @@ export default function GandiaWorld3D({
           nearNpc,
           nearClue,
           isFootMode: van.isFootMode,
+          // Fase activa del cielo para el reloj del HUD.
+          phaseId: atmosphereRef.current?.phaseId ?? null,
         });
       }
 
@@ -321,6 +343,26 @@ export default function GandiaWorld3D({
     van.headlights.forEach((h) => { h.visible = headlightsActive; });
   }, [cameraMode, isFootMode, sirenActive, headlightsActive]);
 
+  /* ------------------------------- Ciclo día/noche (sincronía React ↔ escena) */
+  // Auto-avance del ciclo.
+  useEffect(() => {
+    atmosphereRef.current?.setCycleEnabled(Boolean(cycleAuto));
+  }, [cycleAuto]);
+
+  // Fase manual: el usuario (tecla T o HUD) fija la hora; desactiva el auto.
+  // Si la escena ya está en esa fase (la tecla T la aplicó al instante), no se
+  // reinicia la transición.
+  useEffect(() => {
+    const atmosphere = atmosphereRef.current;
+    if (!atmosphere || !timePhase) return;
+    if (atmosphere.phaseId === timePhase) return;
+    if (atmosphere.cycleEnabled) {
+      atmosphere.setCycleEnabled(false);
+      onToggleCycleAuto?.(false);
+    }
+    atmosphere.setPhase(timePhase, 2);
+  }, [timePhase]); // eslint-disable-line react-hooks/exhaustive-deps
+
   /* ------------------------------- Entrada desacoplada (InputManager) */
   useEffect(() => {
     // Envoltorios seguros: en entornos sin navegador (jsdom, SSR) no existe rAF.
@@ -339,7 +381,14 @@ export default function GandiaWorld3D({
       // Carga asíncrona de los parámetros de jugabilidad (no bloquea el render)
       try {
         const stats = await loadConfig('player_stats.json', DEFAULT_PLAYER_STATS);
-        if (!disposed) statsRef.current = stats;
+        if (!disposed) {
+          statsRef.current = stats;
+          // Ritmo del ciclo día/noche desde player_stats.json → world.dayCycle.
+          const cycle = stats.world?.dayCycle;
+          if (cycle && atmosphereRef.current) {
+            atmosphereRef.current.cycleSecondsPerPhase = cycle.secondsPerPhase ?? 45;
+          }
+        }
       } catch (e) { /* respaldo empaquetado */ }
 
       manager = await InputManager.create({ fallback: DEFAULT_KEYBINDINGS });
@@ -362,9 +411,10 @@ export default function GandiaWorld3D({
         // El salto es un flanco de entrada que consume la física del guardián.
         if (manager.wasPressed('JUMP')) inputRef.current.jump = true;
 
-        // Sirena, faros, cámara y entrar/salir del vehículo son propiedad del
-        // estado de React: se notifican hacia arriba en vez de mutar la escena.
-        for (const action of ['TOGGLE_SIREN', 'TOGGLE_HEADLIGHTS', 'CYCLE_CAMERA', 'TOGGLE_FOOT_MODE']) {
+        // Sirena, faros, cámara, entrar/salir del vehículo y ciclo horario son
+        // propiedad del estado de React: se notifican hacia arriba en vez de
+        // mutar la escena directamente.
+        for (const action of ['TOGGLE_SIREN', 'TOGGLE_HEADLIGHTS', 'CYCLE_CAMERA', 'TOGGLE_FOOT_MODE', 'CYCLE_TIME', 'TOGGLE_CYCLE']) {
           if (manager.wasPressed(action)) actionHandlersRef.current[action]?.();
         }
 

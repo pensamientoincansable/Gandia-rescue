@@ -103,6 +103,18 @@
       "keyboard": ["KeyF"],
       "gamepad": { "buttons": [3] }
     },
+    "CYCLE_TIME": {
+      "label": "Avanzar la hora del día",
+      "type": "press",
+      "keyboard": ["KeyT"],
+      "gamepad": { "buttons": [17] }
+    },
+    "TOGGLE_CYCLE": {
+      "label": "Ciclo día/noche automático",
+      "type": "press",
+      "keyboard": ["KeyY"],
+      "gamepad": { "buttons": [18] }
+    },
     "PHOTO_MODE": {
       "label": "Modo fotografía",
       "type": "press",
