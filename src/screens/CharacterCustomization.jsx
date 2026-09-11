@@ -4,6 +4,7 @@ import { ArrowLeft, Check, Palette, RotateCcw, Shirt, Sparkles, UserRound } from
 import {
   assembleCharacter, defaultGuardianLook, loadGuardianLook, lookId, saveGuardianLook,
 } from '../three/CharacterSystem.js';
+import { AnimatedEntity } from '../three/AnimatedEntity.js';
 
 /**
  * Modo personalización — edita el aspecto del guardián jugable.
@@ -11,8 +12,9 @@ import {
  * El guardián se monta con el pack modular `media/Fantasy Character`
  * (CharacterSystem) y se previsualiza aquí en un escenario Three.js propio:
  * arrastrar para girar, rueda/pellizco para acercar y rotación automática al
- * soltar. El look elegido se guarda en localStorage y es el que usa
- * `RescueVan` al bajar a pie en los modos 3D.
+ * soltar, con la animación procedural de reposo (respiración y balanceo). El
+ * look elegido se guarda en localStorage y es el que usa `RescueVan` al
+ * bajar a pie en los modos 3D.
  */
 
 /** Opciones del personalizador (etiquetas i18n en el render). */
@@ -57,7 +59,7 @@ function useCharacterPreview(look) {
       renderer: null,
       scene: null,
       camera: null,
-      character: null,
+      entity: null,
       raf: 0,
       assembling: 0,
       yaw: 0.6,
@@ -133,19 +135,22 @@ function useCharacterPreview(look) {
     ring.position.y = 0.005;
     scene.add(ring);
 
-    // ---- personaje ----
+    // ---- personaje (con respiración/balanceo de reposo) ----
+    // Una sola entidad reutilizada entre looks: cada rebuild intercambia el
+    // modelo en caliente y recaptura su rig, sin recrear la escena.
+    const entity = new AnimatedEntity({ label: 'preview', motion: 'idle', procedural: true });
+    scene.add(entity.root);
+    state.entity = entity;
     const rebuild = async () => {
       const seq = (state.assembling += 1);
       try {
         const result = await assembleCharacter(lookRef.current);
         if (state.disposed || seq !== state.assembling) return;
-        if (state.character) scene.remove(state.character);
-        state.character = result ? result.group : null;
-        if (state.character) scene.add(state.character);
+        if (result) entity.attachModelObject(result.group, result.source);
+        else entity.detachModel();
       } catch {
         if (state.disposed || seq !== state.assembling) return;
-        if (state.character) scene.remove(state.character);
-        state.character = null;
+        entity.detachModel();
       }
     };
     rebuildRef.current = rebuild;
@@ -220,6 +225,7 @@ function useCharacterPreview(look) {
         state.targetYaw = state.yaw;
       }
       state.yaw += (state.targetYaw - state.yaw) * Math.min(1, dt * 6);
+      entity.update(dt);
       applyCamera();
       renderer.render(scene, camera);
     };
@@ -229,6 +235,7 @@ function useCharacterPreview(look) {
     return () => {
       state.disposed = true;
       cancelAnimationFrame(state.raf);
+      entity.dispose();
       if (observer) observer.disconnect();
       else window.removeEventListener('resize', resize);
       mount.removeEventListener('pointerdown', onPointerDown);

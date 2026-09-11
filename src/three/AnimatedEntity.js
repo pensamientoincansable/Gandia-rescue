@@ -19,8 +19,9 @@ import { loadModel, normalizeModelPaths } from './ModelLoader.js';
  *     generados con IA), la entidad no se queda congelada: reproduce un
  *     balanceo/rebote coherente con el estado (reposo, caminar, correr, saltar)
  *     y, además, si el asset trae un esqueleto con los nombres de hueso del
- *     pack de personajes, un balanceo real de brazos/piernas y respiración
- *     (véase `_applyRigMotion`).
+ *     pack de personajes, un balanceo real de brazos (con codos), piernas
+ *     (con rodillas y tobillos compensados) y respiración (véase
+ *     `_applyRigMotion`).
  *
  * Uso:
  *   const npc = new AnimatedEntity({
@@ -50,31 +51,47 @@ const PROCEDURAL_MOTIONS = {
  * Movimiento ESQUELETAL procedural para personajes sin clips (p. ej. el pack
  * `media/Fantasy Character`, cuyos FBX no traen animaciones). Se maneja por
  * nombre de hueso del rig UE (upperarm_l, thigh_l, calf_l, spine_02…) con
- * ejes convertidos al espacio del personaje, así funciona con cualquier
- * esqueleto que use esos nombres y es inofensivo para el resto (animales,
- * props): si no encuentra los huesos, no hace nada.
+ * ejes del mundo convertidos al espacio del padre de cada nodo, así funciona
+ * con cualquier esqueleto que use esos nombres y es inofensivo para el resto
+ * (animales, props): si no encuentra los huesos, no hace nada.
  *
- * Convenciones medidas sobre el asset (rotación + alrededor del eje
- * izquierda-derecha del personaje): pierna hacia ATRÁS, rodilla SE DOBLA
- * (talón atrás), brazo hacia DELANTE.
+ * Convenciones (rotación + alrededor del eje izquierda-derecha del
+ * personaje, compuesta en el espacio del padre sobre la pose de reposo):
+ * miembro colgando hacia ATRÁS, rodilla DOBLADA (talón atrás), brazo hacia
+ * ATRÁS. Los brazos oscilan en contrafase con la pierna del mismo lado, los
+ * codos acompañan al hombro y los tobillos compensan cadera + rodilla para
+ * que los pies apoyen planos.
  */
 const RIG_MOTIONS = {
-  idle: { stepFreq: 0, legSwing: 0, kneeBend: 0, armSwing: 0.03, armFreq: 0.32, breath: 0.014, breathFreq: 0.26 },
-  talk: { stepFreq: 0, legSwing: 0, kneeBend: 0, armSwing: 0.08, armFreq: 0.55, breath: 0.02, breathFreq: 0.34 },
-  walk: { stepFreq: 1.9, legSwing: 0.4, kneeBend: 0.5, armSwing: 0.35, armFreq: 0, breath: 0.01, breathFreq: 0.3 },
-  run: { stepFreq: 3.2, legSwing: 0.75, kneeBend: 0.9, armSwing: 0.7, armFreq: 0, breath: 0.018, breathFreq: 0.5 },
-  sprint: { stepFreq: 3.2, legSwing: 0.75, kneeBend: 0.9, armSwing: 0.7, armFreq: 0, breath: 0.018, breathFreq: 0.5 },
-  jump: { stepFreq: 0, legSwing: 0.3, kneeBend: 0.55, armSwing: 0.2, armFreq: 0, breath: 0, breathFreq: 0, tuck: true },
-  fly: { stepFreq: 0, legSwing: 0, kneeBend: 0, armSwing: 0, armFreq: 0, breath: 0, breathFreq: 0 },
+  idle: { stepFreq: 0, legSwing: 0, kneeBend: 0, armSwing: 0.03, armFreq: 0.32, elbowBend: 0, breath: 0.014, breathFreq: 0.26 },
+  talk: { stepFreq: 0, legSwing: 0, kneeBend: 0, armSwing: 0.08, armFreq: 0.55, elbowBend: 0.05, breath: 0.02, breathFreq: 0.34 },
+  walk: { stepFreq: 1.9, legSwing: 0.4, kneeBend: 0.5, armSwing: 0.35, armFreq: 0, elbowBend: 0.08, breath: 0.01, breathFreq: 0.3 },
+  run: { stepFreq: 3.2, legSwing: 0.7, kneeBend: 0.9, armSwing: 0.65, armFreq: 0, elbowBend: 0.5, breath: 0.018, breathFreq: 0.5 },
+  sprint: { stepFreq: 3.2, legSwing: 0.7, kneeBend: 0.9, armSwing: 0.65, armFreq: 0, elbowBend: 0.5, breath: 0.018, breathFreq: 0.5 },
+  jump: { stepFreq: 0, legSwing: 0.3, kneeBend: 0.55, armSwing: 1.1, armFreq: 0, elbowBend: 0.3, armOut: 0.45, breath: 0, breathFreq: 0, tuck: true },
+  fly: { stepFreq: 0, legSwing: 0, kneeBend: 0, armSwing: 0, armFreq: 0, elbowBend: 0, breath: 0, breathFreq: 0 },
 };
 
 /** Huesos animados por grupo (nombres del rig UE compartidos por el pack). */
 const RIG_BONES = {
   arms: ['upperarm_l', 'upperarm_r'],
+  forearms: ['lowerarm_l', 'lowerarm_r'],
   thighs: ['thigh_l', 'thigh_r'],
   calves: ['calf_l', 'calf_r'],
+  feet: ['foot_l', 'foot_r'],
   spine: ['spine_02', 'spine_03'],
 };
+
+/**
+ * Ángulo del tobillo para que el pie apoye plano: compensa la suma de
+ * cadera + rodilla (con tope para no doblarlo de forma antinatural). En el
+ * salto los pies cuelgan con las punteras hacia abajo.
+ */
+function footAngleFor(thighAngle, kneeAngle, cfg) {
+  if (cfg.tuck) return 0.35;
+  const raw = -(thighAngle + kneeAngle) * 0.8;
+  return Math.max(-0.6, Math.min(0.6, raw));
+}
 
 /* Vectores/cuaterniones reutilizables (evita basura por fotograma). */
 const _swingAxis = /*@__PURE__*/ new THREE.Vector3();
@@ -179,8 +196,11 @@ export class AnimatedEntity {
     return { loaded: false, path: null, animated: false };
   }
 
-  /** Sustituye el contenido actual por el GLTF recién cargado. */
-  _attachModel(gltf, animations, fit, source) {
+  /**
+   * Retira el modelo actual (si lo hay) y olvida su rig. El monigote de
+   * respaldo NO se restaura: sólo existe hasta que llega el primer modelo.
+   */
+  detachModel() {
     this.model?.mixer?.stopAllAction();
     this.model = null;
     this._rig = null;
@@ -188,6 +208,12 @@ export class AnimatedEntity {
       this.visual.remove(this.modelHolder);
       this.modelHolder = null;
     }
+    this.source = null;
+  }
+
+  /** Sustituye el contenido actual por el GLTF recién cargado. */
+  _attachModel(gltf, animations, fit, source) {
+    this.detachModel();
 
     const hasClips = !!gltf.animations?.length;
     if (hasClips) this.model = new AnimatedModel(gltf, { animations });
@@ -319,7 +345,9 @@ export class AnimatedEntity {
   /**
    * Balanceo de brazos/piernas y respiración para modelos esqueletados sin
    * clips. Convenciones (+ángulo sobre el eje izquierda-derecha del persona-
-   * je): pierna atrás, rodilla doblada, brazo delante.
+   * je): miembro colgando hacia atrás, rodilla doblada, brazo hacia atrás
+   * (en contrafase con la pierna del mismo lado); los codos acompañan al
+   * hombro y los tobillos compensan para apoyar el pie plano.
    */
   _applyRigMotion() {
     const rig = this._rig;
@@ -331,48 +359,78 @@ export class AnimatedEntity {
     const swing = cfg.stepFreq ? Math.sin(t * cfg.stepFreq * Math.PI * 2) : 0;
     const legL = cfg.tuck ? -cfg.legSwing : -cfg.legSwing * swing;
     const legR = cfg.tuck ? -cfg.legSwing : cfg.legSwing * swing;
-    // La rodilla sólo se dobla en un sentido (nunca se hiperextiende).
+    // La rodilla sólo se dobla en un sentido (nunca se hiperextiende): se
+    // flexiona al llevar la pierna hacia atrás, la de apoyo queda recta.
     const kneeL = cfg.tuck ? cfg.kneeBend : cfg.kneeBend * Math.max(0, -swing);
     const kneeR = cfg.tuck ? cfg.kneeBend : cfg.kneeBend * Math.max(0, swing);
-    // Brazos en contrafase con las piernas del mismo lado.
-    const armL = cfg.tuck ? -cfg.armSwing : -cfg.armSwing * swing;
-    const armR = cfg.tuck ? -cfg.armSwing : cfg.armSwing * swing;
+    // Brazos en CONTRAFASE con la pierna del mismo lado: al adelantar la
+    // pierna izquierda, el brazo izquierdo va hacia atrás (y viceversa).
+    const armL = cfg.tuck ? -cfg.armSwing : cfg.armSwing * swing;
+    const armR = cfg.tuck ? -cfg.armSwing : -cfg.armSwing * swing;
     // Micro-balanceo de brazos en reposo/conversación.
     const idleArm = cfg.armFreq ? Math.sin(t * cfg.armFreq * Math.PI * 2) * cfg.armSwing : 0;
     const idleArmR = cfg.armFreq ? Math.sin(t * cfg.armFreq * Math.PI * 2 + 1.1) * cfg.armSwing : 0;
     const breath = cfg.breath ? Math.sin(t * cfg.breathFreq * Math.PI * 2) * cfg.breath : 0;
+    const out = cfg.armOut ?? 0;
+    const elbowBase = -(cfg.elbowBend ?? 0);
 
-    const { arms, thighs, calves, spine } = rig.groups;
-    this._swingRigNode(thighs[0], legL);
-    this._swingRigNode(thighs[1], legR);
-    this._swingRigNode(calves[0], kneeL);
-    this._swingRigNode(calves[1], kneeR);
-    this._swingRigNode(arms[0], armL + idleArm);
-    this._swingRigNode(arms[1], armR + idleArmR);
-    for (const node of spine) this._swingRigNode(node, breath);
+    const { arms, forearms, thighs, calves, feet, spine } = rig.groups;
+    // Orden jerárquico (de la cadera hacia los pies): cada nodo refresca la
+    // matriz de su padre antes de calcular su eje, así el tobillo tiene en
+    // cuenta el giro actual de la rodilla y de la cadera.
+    this._poseRigNode(thighs[0], legL);
+    this._poseRigNode(thighs[1], legR);
+    this._poseRigNode(calves[0], kneeL);
+    this._poseRigNode(calves[1], kneeR);
+    this._poseRigNode(feet[0], footAngleFor(legL, kneeL, cfg));
+    this._poseRigNode(feet[1], footAngleFor(legR, kneeR, cfg));
+    for (const node of spine) this._poseRigNode(node, breath);
+    this._poseRigNode(arms[0], armL + idleArm, out);
+    this._poseRigNode(arms[1], armR + idleArmR, -out);
+    this._poseRigNode(forearms[0], elbowBase + (armL + idleArm) * 0.35);
+    this._poseRigNode(forearms[1], elbowBase + (armR + idleArmR) * 0.35);
   }
 
   /**
-   * Aplica a un nodo del rig una rotación (en radianes) alrededor del eje
-   * izquierda-derecha del PERSONAJE, respetando su pose de reposo. El eje se
-   * convierte al espacio local del padre con su cuaternión mundial, de modo
-   * que funciona con cualquier orientación de origen del asset.
+   * Gira un nodo del rig alrededor de los ejes del PERSONAJE (X =
+   * izquierda-derecha para el balanceo adelante/atrás, Z = apertura lateral
+   * de los brazos), respetando su pose de reposo. Cada eje se convierte al
+   * espacio del padre con su cuaternión mundial ACTUAL y se PRE-multiplica
+   * (`Q · rest`), de modo que el giro equivale a rotar la pose de reposo en
+   * el mundo sea cual sea la orientación de origen del asset. Post-multipli-
+   * car (`rest · Q`) giraría alrededor de un eje ya rotado por el reposo y,
+   * con los ~90-160° de este rig, las piernas se moverían en direcciones
+   * extrañas.
    * @param {THREE.Object3D|null} node
-   * @param {number} angle
+   * @param {number} angleX balanceo adelante (+) / atrás (−)… en radianes
+   * @param {number} [angleZ] apertura lateral (brazos) en radianes
    */
-  _swingRigNode(node, angle) {
+  _poseRigNode(node, angleX, angleZ = 0) {
     if (!node) return;
     const rest = this._rig.rest.get(node.uuid);
     if (!rest) return;
-    if (!angle) {
+    if (!angleX && !angleZ) {
       node.quaternion.copy(rest);
       return;
     }
-    node.parent?.getWorldQuaternion(_parentQuat);
+    if (node.parent) {
+      node.parent.updateWorldMatrix(true, false);
+      node.parent.getWorldQuaternion(_parentQuat);
+    } else {
+      _parentQuat.identity();
+    }
     _parentQuat.invert();
-    _swingAxis.set(1, 0, 0).applyQuaternion(_parentQuat).normalize();
-    _swingQuat.setFromAxisAngle(_swingAxis, angle);
-    node.quaternion.copy(rest).multiply(_swingQuat);
+    node.quaternion.copy(rest);
+    if (angleZ) {
+      _swingAxis.set(0, 0, 1).applyQuaternion(_parentQuat).normalize();
+      _swingQuat.setFromAxisAngle(_swingAxis, angleZ);
+      node.quaternion.premultiply(_swingQuat);
+    }
+    if (angleX) {
+      _swingAxis.set(1, 0, 0).applyQuaternion(_parentQuat).normalize();
+      _swingQuat.setFromAxisAngle(_swingAxis, angleX);
+      node.quaternion.premultiply(_swingQuat);
+    }
   }
 
   /** Orientación y posición de la entidad. */

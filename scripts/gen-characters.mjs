@@ -215,6 +215,16 @@ function stripTextures(object) {
       mat.bumpMap = null;
       mat.emissiveMap = null;
       mat.alphaMap = null;
+      // Los materiales del FBX traen `emissive` BLANCO y un difuso teñido de
+      // autor: si se exportan tal cual, el GLTFExporter los conserva y el
+      // personaje se ve blanquecino/velado aunque las texturas carguen bien
+      // (el emissive suma luz blanca a cada píxel). Se neutralizan aquí: el
+      // color y las texturas reales los aplica `CharacterSystem` en runtime.
+      if (mat.color) mat.color.set(0xffffff);
+      if (mat.emissive) mat.emissive.set(0x000000);
+      if ('emissiveIntensity' in mat) mat.emissiveIntensity = 1;
+      if ('roughness' in mat) mat.roughness = 0.9;
+      if ('metalness' in mat) mat.metalness = 0.0;
       mat.needsUpdate = true;
     }
   });

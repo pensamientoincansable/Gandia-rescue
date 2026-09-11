@@ -29,6 +29,16 @@ const storage = {
  * animación, el movimiento lo aporta la animación procedural de
  * `AnimatedEntity` (balanceo al andar, respiración en reposo…).
  *
+ * Tres detalles del pack que condicionan el montaje:
+ *   · La pose de reposo de los FBX es en T (brazos horizontales): aquí se
+ *     relajan los hombros para que el personaje quede de pie con los brazos a
+ *     los costados, que es la pose base sobre la que anima `AnimatedEntity`.
+ *   · El pack NO trae cabeza de aldeano (ni modular ni en el outfit): los
+ *     looks `peasant` reutilizan la cabeza con capucha ranger del mismo
+ *     género para no quedar acéfalos.
+ *   · Los materiales FBX traen `emissive` blanco: se neutraliza al vestir
+ *     (si no, el personaje se ve blanquecino aunque las texturas carguen).
+ *
  * Nota de skinning (leer antes de tocar el montaje): GLTFLoader enlaza las
  * mallas con `bindMatrix` = IDENTIDAD y `bindMode` "attached", de modo que en
  * el vertex shader la transformación de la malla se cancela con
@@ -184,6 +194,13 @@ function loadTextureSafe(url) {
  * @param {object} manifest
  */
 function applyLookToMaterial(material, materialName, look, manifest) {
+  // Los materiales del FBX traen `emissive` BLANCO (y los .glb antiguos lo
+  // conservaron): sin esto el personaje se ve blanquecino/velado porque el
+  // emissive suma luz blanca a cada píxel aunque el mapa de color cargue.
+  if (material.emissive) material.emissive.set(0x000000);
+  material.emissiveMap = null;
+  if ('emissiveIntensity' in material) material.emissiveIntensity = 1;
+
   const cfg = manifest.materials?.[materialName];
   if (!cfg) {
     material.color.set(FALLBACK_COLORS[materialName] ?? 0xcccccc);
@@ -217,7 +234,16 @@ function applyLookToMaterial(material, materialName, look, manifest) {
     loadTextureSafe(entry.url).then((texture) => {
       if (!texture) return;
       texture.colorSpace = entry.srgb ? THREE.SRGBColorSpace : THREE.NoColorSpace;
+      // La geometría del pack tiene un único UV: el `aoMap` de three espera el
+      // segundo por defecto (channel 1) y muestrearía basura sin esto.
+      if ('channel' in texture) texture.channel = 0;
+      texture.anisotropy = 4;
       material[entry.slot] = texture;
+      if (entry.slot === 'normalMap') {
+        // Las normales del pack siguen la convención DirectX de Unreal (Y+);
+        // three espera OpenGL (Y−): se invierte el verde al vestir.
+        material.normalScale.set(1, -1);
+      }
       if (entry.slot === 'roughnessMap' || entry.slot === 'metalnessMap') {
         material.roughness = 1;
         material.metalness = 1;
@@ -234,6 +260,82 @@ function applyLookToMaterial(material, materialName, look, manifest) {
 }
 
 /* ------------------------------------------------------------------ montaje */
+/**
+ * Contenedor que hay que rotar para mover un hueso del pack: cada hueso es
+ * una hoja colgada de `hueso → X_2 → X_1` y la cadena cinemática vive en los
+ * nodos `X_1`, así que se devuelve `X_1` (en rigs clásicos, el propio hueso).
+ */
+function containerForBone(skeleton, name) {
+  const bone = skeleton?.getBoneByName?.(name);
+  if (!bone) return null;
+  const hasBoneChildren = bone.children.some((child) => child.isBone);
+  if (hasBoneChildren) return bone;
+  return bone.parent?.parent ?? bone.parent ?? null;
+}
+
+/* Reutilizables del posado (sin basura por llamada). */
+const _relaxParentQuat = /*@__PURE__*/ new THREE.Quaternion();
+const _relaxQuat = /*@__PURE__*/ new THREE.Quaternion();
+const _relaxAxis = /*@__PURE__*/ new THREE.Vector3();
+const _relaxA = /*@__PURE__*/ new THREE.Vector3();
+const _relaxB = /*@__PURE__*/ new THREE.Vector3();
+const _worldX = /*@__PURE__*/ new THREE.Vector3(1, 0, 0);
+const _worldZ = /*@__PURE__*/ new THREE.Vector3(0, 0, 1);
+
+/**
+ * Gira un nodo del rig alrededor de un eje del MUNDO (X = izquierda-derecha,
+ * Z = arriba-abajo del giro lateral). El eje se convierte al espacio del
+ * padre y se PRE-multiplica (`Q · rest`): así el giro equivale a rotar la
+ * pose de reposo en el mundo, sea cual sea la orientación de origen del
+ * asset. Post-multiplicar (`rest · Q`) giraría alrededor de un eje ya
+ * rotado por el reposo y, con los ~90-160° de este rig, las piernas se
+ * moverían en direcciones extrañas.
+ */
+function rotateNodeAroundWorldAxis(node, axis, angle) {
+  if (!node || !node.parent || !angle) return;
+  node.parent.updateWorldMatrix(true, false);
+  node.parent.getWorldQuaternion(_relaxParentQuat).invert();
+  _relaxAxis.copy(axis).applyQuaternion(_relaxParentQuat).normalize();
+  _relaxQuat.setFromAxisAngle(_relaxAxis, angle);
+  node.quaternion.premultiply(_relaxQuat);
+}
+
+/**
+ * Relaja los brazos del personaje: la pose de reposo del pack es en T
+ * (brazos horizontales, 1.7-2.1 m de envergadura) y en el juego deben colgar
+ * a los costados con los codos ligeramente flexionados. Es la pose base que
+ * verán la previsualización, los NPC y el guardián, y sobre la que anima el
+ * rig procedural de `AnimatedEntity`. Si los brazos ya cuelgan, no toca nada.
+ * @param {THREE.Skeleton} skeleton Esqueleto compartido ya montado.
+ */
+function relaxCharacterArms(skeleton) {
+  if (!skeleton?.bones?.length) return;
+  let root = skeleton.bones[0];
+  while (root.parent) root = root.parent;
+  root.updateMatrixWorld(true, true);
+
+  const ARM_DOWN = 1.35;   // ~77°: del horizontal a ~13° del costado
+  const ARM_FORWARD = -0.06; // manos un poco por delante del torso
+  const ELBOW_BEND = -0.18;  // codos ligeramente flexionados
+
+  for (const side of ['l', 'r']) {
+    const shoulder = skeleton.getBoneByName(`upperarm_${side}`);
+    const hand = skeleton.getBoneByName(`hand_${side}`);
+    const upperNode = containerForBone(skeleton, `upperarm_${side}`);
+    if (!shoulder || !hand || !upperNode) continue;
+    shoulder.getWorldPosition(_relaxA);
+    hand.getWorldPosition(_relaxB);
+    const dx = _relaxB.x - _relaxA.x;
+    const dy = _relaxB.y - _relaxA.y;
+    if (Math.abs(dy) > Math.abs(dx)) continue; // ya cuelga: no tocar
+    const sign = dx >= 0 ? 1 : -1;
+    rotateNodeAroundWorldAxis(upperNode, _worldZ, -sign * ARM_DOWN);
+    rotateNodeAroundWorldAxis(upperNode, _worldX, ARM_FORWARD);
+    rotateNodeAroundWorldAxis(containerForBone(skeleton, `lowerarm_${side}`), _worldX, ELBOW_BEND);
+  }
+  root.updateMatrixWorld(true, true);
+}
+
 /**
  * Piezas necesarias para un look (sin `acc` si no lleva hombreras).
  * @returns {Array<{gender:string, outfit:string, slot:string}>}
@@ -274,8 +376,12 @@ export async function assembleCharacter(look) {
   const manifest = await loadCharactersManifest();
   const parts = manifest.parts ?? [];
   const plan = partPlanForLook(normalized);
-  const requested = plan.map(({ gender, outfit, slot }) => parts.find(
-    (p) => p.gender === gender && p.outfit === outfit && p.slot === slot,
+  const requested = plan.map(({ gender, outfit, slot }) => (
+    parts.find((p) => p.gender === gender && p.outfit === outfit && p.slot === slot)
+    // El pack no trae cabeza de aldeano: los looks `peasant` reutilizan la
+    // cabeza con capucha ranger del mismo género (misma armadura) en vez de
+    // quedar acéfalos. El fallback es genérico por si faltara otra pieza.
+    ?? parts.find((p) => p.gender === gender && p.slot === slot)
   ));
 
   const loaded = await Promise.all(requested.map((part) => (part ? loadModel(part.glb) : Promise.resolve(null))));
@@ -376,6 +482,11 @@ export async function assembleCharacter(look) {
     }
     mesh.material = Array.isArray(mesh.material) ? materials : materials[0];
   }
+
+  // 3b. Relajar los brazos (la pose del FBX es en T): quedan colgando a los
+  //     costados con los codos algo flexionados. Se hace ANTES del ajuste de
+  //     tamaño para que la caja se mida ya en pose natural.
+  relaxCharacterArms(skeleton);
 
   // 4. Normalizar al tamaño del juego (1.85 m, pies en el suelo, centrado).
   const fit = manifest.fit ?? { height: 1.85, center: true, ground: 0 };
