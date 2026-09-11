@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import {
   Bell, BookOpen, Check, ChevronDown, ChevronRight, Compass, Home, Info, Languages, Leaf,
-  MapPin, Monitor, Navigation, Settings, ShieldCheck, Smartphone, Sun, Volume2, VolumeX, Waves, Mountain,
+  MapPin, Monitor, Navigation, Palette, Settings, ShieldCheck, Smartphone, Sun, Volume2, VolumeX, Waves, Mountain,
 } from 'lucide-react';
 import { levelForXp, levelProgress, photoCount } from '../lib/game.js';
 import { XpBar } from '../components/common.jsx';
@@ -49,7 +49,7 @@ function TopNav({ t, language, setLanguage, muted, setMuted, openModal, profile 
   );
 }
 
-function PlayerCard({ t, openProfile, save }) {
+function PlayerCard({ t, openProfile, onCustomize, save }) {
   const level = levelForXp(save.xp);
   return (
     <aside className="player-card glass-panel">
@@ -63,6 +63,9 @@ function PlayerCard({ t, openProfile, save }) {
         </button>
         <span className="level-pill">{t('levelShort')} {level}</span>
       </div>
+      <button className="player-customize" onClick={onCustomize}>
+        <Palette size={15} />{t('customize')}
+      </button>
       <XpBar level={level} progress={levelProgress(save.xp)} t={t} compact />
       <div className="player-stats">
         <div><strong>{save.rescues}</strong><span>{t('rescued')}</span></div>
@@ -98,7 +101,7 @@ function ModeCard({ kind, t, onStart, badge = null }) {
   );
 }
 
-export default function MainMenu({ t, language, setLanguage, muted, setMuted, openModal, startMode, save }) {
+export default function MainMenu({ t, language, setLanguage, muted, setMuted, openModal, startMode, save, onCustomize }) {
   const pendingCases = 6 - Object.values(save.cases ?? {}).filter((n) => n > 0).length;
   return (
     <main className="menu-screen screen-enter">
@@ -116,7 +119,7 @@ export default function MainMenu({ t, language, setLanguage, muted, setMuted, op
             <span><MapPin size={16} /> Gandía, La Safor</span>
           </div>
         </section>
-        <PlayerCard t={t} openProfile={() => openModal('profile')} save={save} />
+        <PlayerCard t={t} openProfile={() => openModal('profile')} onCustomize={onCustomize} save={save} />
       </div>
       <section className="mode-section">
         <div className="mode-section__heading">

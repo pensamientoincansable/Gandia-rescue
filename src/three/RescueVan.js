@@ -3,6 +3,7 @@ import { createRescueVanDecal } from './TextureFactory.js';
 import { DEFAULT_PLAYER_STATS } from '../engine/defaults.js';
 import { AnimatedEntity } from './AnimatedEntity.js';
 import { DEFAULT_MODELS, loadModelsManifest, normalizeModelPaths } from './ModelLoader.js';
+import { assembleCharacter, loadGuardianLook, saveGuardianLook } from './CharacterSystem.js';
 
 /** Elimina rutas repetidas conservando el orden de prioridad. */
 function dedupePaths(paths) {
@@ -279,16 +280,30 @@ export class RescueVan {
   }
 
   /**
-   * Carga el modelo 3D del personaje jugable definido en `models.json`
-   * (entrada `ranger`). Se prueban las candidatas en orden —copia local, URL
-   * remota del asset original, ranger procedural— y la primera que carga gana.
-   * El asset se normaliza con `fit` (altura real, pies en el suelo, centrado),
-   * así que funciona con `.glb` de cualquier origen y unidades.
+   * Carga el modelo 3D del personaje jugable.
+   *   1. Personaje modular del pack `media/Fantasy Character`, montado con el
+   *      look del guardián guardado en localStorage (o el de por defecto).
+   *   2. Si el pack no está disponible, la cadena del manifiesto
+   *      (`models.json`, entrada `ranger`) con el ranger procedural de respaldo.
+   *   3. Si nada carga, el monigote de primitivas.
+   * El asset se normaliza con `fit` (altura real, pies en el suelo, centrado).
    * @returns {Promise<{ loaded: boolean, path: string|null, animated: boolean }>}
    */
   async _applyRangerModel() {
     const defaults = DEFAULT_MODELS.ranger;
     try {
+      // 1. Guardián del pack de personajes (personalizable en el menú).
+      const look = loadGuardianLook();
+      const assembled = await assembleCharacter(look);
+      if (assembled) {
+        this.rangerAvatar.attachModelObject(assembled.group, assembled.source);
+        this.rangerModelSource = assembled.source;
+        console.info(`[GandiaRescue] Guardián: ${assembled.source} (personaje modular del pack, animación procedural)`);
+        this._syncRangerAvatar();
+        return { loaded: true, path: assembled.source, animated: false };
+      }
+
+      // 2. Respaldo: copia local del manifiesto → ranger procedural del repo.
       const manifest = await loadModelsManifest();
       const cfg = manifest?.ranger ?? defaults;
       const candidates = dedupePaths([
@@ -315,6 +330,21 @@ export class RescueVan {
       console.warn('[GandiaRescue] No se pudo cargar el modelo del jugador:', error?.message ?? error);
       return { loaded: false, path: null, animated: false };
     }
+  }
+
+  /**
+   * Vuelve a aplicar el look del guardián en caliente (tras personalizarlo).
+   * @param {object} look
+   * @returns {Promise<{ loaded: boolean, path: string|null, animated: boolean }>}
+   */
+  async applyGuardianLook(look) {
+    saveGuardianLook(look);
+    const assembled = await assembleCharacter(look);
+    if (!assembled) return this._applyRangerModel();
+    this.rangerAvatar.attachModelObject(assembled.group, assembled.source);
+    this.rangerModelSource = assembled.source;
+    this._syncRangerAvatar();
+    return { loaded: true, path: assembled.source, animated: false };
   }
 
   /** Humanoid simple de primitivas usado si no hay modelo GLTF. */

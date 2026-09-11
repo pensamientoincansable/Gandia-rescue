@@ -14,6 +14,7 @@ import MainMenu from './screens/MainMenu.jsx';
 import RescueMode from './screens/RescueMode.jsx';
 import ExploreMode from './screens/ExploreMode.jsx';
 import Shelter from './screens/Shelter.jsx';
+import CharacterCustomization from './screens/CharacterCustomization.jsx';
 import { ModalShell, SpeciesGallery, Toast } from './components/common.jsx';
 
 /* ------------------------------------------------------------------ */
@@ -258,7 +259,15 @@ function AppInner() {
   return (
     <div className="app-shell">
       {screen === 'menu' && (
-        <MainMenu {...{ t, language, setLanguage, muted, setMuted, save }} openModal={setModal} startMode={startMode} />
+        <MainMenu
+          {...{ t, language, setLanguage, muted, setMuted, save }}
+          openModal={setModal}
+          startMode={startMode}
+          onCustomize={() => setScreen('customize')}
+        />
+      )}
+      {screen === 'customize' && (
+        <CharacterCustomization t={t} goMenu={() => setScreen('menu')} notify={notify} />
       )}
       {screen === 'loading' && <LoadingScreen t={t} mode={loadingMode} progress={progress} />}
       {screen === 'rescue' && (
