@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import {
   ArrowLeft, Bell, Camera, ChevronRight, HeartPulse, Image as ImageIcon,
-  Map as MapIcon, MapPin, Navigation, PawPrint, Eye, User, Radio, Sun, Volume2, Sparkles, MessageSquare,
+  Map as MapIcon, MapPin, Navigation, PawPrint, Eye, User, Radio, Sun, Volume2, Sparkles, MessageSquare, X,
 } from 'lucide-react';
 import GandiaWorld3D from '../three/GandiaWorld3D.jsx';
 import Panorama360 from '../components/Panorama360.jsx';
@@ -58,6 +58,7 @@ export default function ExploreMode({
   useEffect(() => { actions.visitZone(zoneId); }, [zoneId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const zoneCases = CASES.filter((c) => c.zone === zoneId);
+  const pendingMissions = zoneCases.filter((cse) => (save.cases[cse.id] ?? 0) === 0).length;
 
   /* Hotspots compatibles */
   const hotspots = useMemo(() => {
@@ -237,8 +238,8 @@ export default function ExploreMode({
         <p><Camera size={15} />{t('virtualHint')}</p>
       </div>
 
-      {/* 3. PANEL LATERAL DE MISIONES Y FOTOS */}
-      <aside className={`explore-map-panel glass-panel ${missionsOpen ? '' : 'is-collapsed'}`}>
+      {/* 3. PANEL LATERAL DE MISIONES Y FOTOS (en móvil es un cajón plegable) */}
+      <aside className={`explore-map-panel glass-panel ${missionsOpen ? 'is-open' : ''}`}>
         <div className="map-panel-head">
           <div><span>{t('missionsZone')}</span><strong>{zoneName}</strong></div>
           <button onClick={() => setTravelOpen(true)} aria-label={t('mapTitle')}><MapIcon size={17} /></button>
@@ -270,6 +271,23 @@ export default function ExploreMode({
           <button onClick={() => setPhotosOpen(true)}><ImageIcon size={15} />{t('photosTitle')}</button>
         </div>
       </aside>
+
+      {/* Botón flotante de misiones (sólo móvil: abre el cajón lateral) */}
+      <button
+        type="button"
+        className={`missions-fab ${missionsOpen ? 'is-open' : ''}`}
+        onClick={() => setMissionsOpen((v) => !v)}
+        aria-label={t('missions')}
+        aria-expanded={missionsOpen}
+      >
+        {missionsOpen ? <X size={20} /> : <Bell size={20} />}
+        {!missionsOpen && pendingMissions > 0 && (
+          <i className="missions-fab__badge">{pendingMissions}</i>
+        )}
+      </button>
+      {missionsOpen && (
+        <div className="missions-scrim" onClick={() => setMissionsOpen(false)} aria-hidden="true" />
+      )}
 
       {/* 4. PANEL HUD DE CONTROL DE LA FURGONETA */}
       <VanControlsHUD

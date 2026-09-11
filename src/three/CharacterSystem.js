@@ -36,6 +36,11 @@ const storage = {
  *   · El pack NO trae cabeza de aldeano (ni modular ni en el outfit): los
  *     looks `peasant` reutilizan la cabeza con capucha ranger del mismo
  *     género para no quedar acéfalos.
+ *   · El pack NO trae geometría de CABEZA en absoluto: la capucha ranger
+ *     viene vacía por delante y el personaje quedaba sin rostro. Aquí se
+ *     añade una cabeza procedural vestida con la región de la cara del atlas
+ *     de piel (ojos, nariz y labios) y sujeta al hueso `Head`, de modo que
+ *     sigue a la capucha y responde a los tonos de piel del look.
  *   · Los materiales FBX traen `emissive` blanco: se neutraliza al vestir
  *     (si no, el personaje se ve blanquecino aunque las texturas carguen).
  *
@@ -209,9 +214,11 @@ function applyLookToMaterial(material, materialName, look, manifest) {
   }
 
   const isSkin = manifest.skin?.materials?.includes(materialName) ?? false;
+  const skinTone = manifest.skin?.tones?.[look.skin] ?? 1;
   if (isSkin) {
-    // "Pieles": tinte multiplicativo sobre el atlas de piel del pack.
-    material.color.setScalar(manifest.skin?.tones?.[look.skin] ?? 1);
+    // "Pieles": tinte multiplicativo sobre el atlas de piel del pack (su
+    // base es deliberadamente oscura y necesita el multiplicador > 1).
+    material.color.setScalar(skinTone);
   } else {
     material.color.set(cfg.fallbackColor ?? 0xffffff);
   }
@@ -232,7 +239,19 @@ function applyLookToMaterial(material, materialName, look, manifest) {
 
   for (const entry of entries) {
     loadTextureSafe(entry.url).then((texture) => {
-      if (!texture) return;
+      if (!texture) {
+        // Sin mapa de color la piel quedaría GRIS (el multiplicador de tono
+        // sobre blanco), así que se recupera un tono carne de respaldo que
+        // conserva la variación oscuro/medio/claro del look.
+        if (entry.slot === 'map' && isSkin) {
+          const mediumTone = manifest.skin?.tones?.medium ?? skinTone ?? 1;
+          const relative = THREE.MathUtils.clamp(skinTone / mediumTone, 0.55, 1.3);
+          material.color.set(cfg.fallbackColor ?? FALLBACK_COLORS[materialName] ?? 0xffffff);
+          material.color.multiplyScalar(relative);
+          material.needsUpdate = true;
+        }
+        return;
+      }
       texture.colorSpace = entry.srgb ? THREE.SRGBColorSpace : THREE.NoColorSpace;
       // La geometría del pack tiene un único UV: el `aoMap` de three espera el
       // segundo por defecto (channel 1) y muestrearía basura sin esto.
@@ -262,15 +281,24 @@ function applyLookToMaterial(material, materialName, look, manifest) {
 /* ------------------------------------------------------------------ montaje */
 /**
  * Contenedor que hay que rotar para mover un hueso del pack: cada hueso es
- * una hoja colgada de `hueso → X_2 → X_1` y la cadena cinemática vive en los
- * nodos `X_1`, así que se devuelve `X_1` (en rigs clásicos, el propio hueso).
+ * una hoja colgada de sus contenedores `X_1` (a veces con un `X_2` intermedio:
+ * el anidado VARÍA según la pieza base —el cuerpo ranger femenino trae
+ * `hueso → X_2 → X_1`, el masculino `hueso → X_1` y los aldeanos, huesos
+ * encadenados sin contenedores—) y la cadena cinemática vive en los nodos
+ * `X_1`, así que se sube por los ancestros que pertenezcan al propio hueso
+ * (`X_1`/`X_2`) hasta el más alto. Subir un número fijo de niveles (`parent.
+ * parent`) es el bug que animaba al PADRE en las bases planas: la pelvis en
+ * vez del muslo (ambas piernas se movían juntas) o la clavícula en vez del
+ * brazo. En rigs clásicos (sin contenedores) se devuelve el propio hueso.
  */
 function containerForBone(skeleton, name) {
   const bone = skeleton?.getBoneByName?.(name);
   if (!bone) return null;
-  const hasBoneChildren = bone.children.some((child) => child.isBone);
-  if (hasBoneChildren) return bone;
-  return bone.parent?.parent ?? bone.parent ?? null;
+  let node = bone;
+  while (node.parent && (node.parent.name === `${name}_1` || node.parent.name === `${name}_2`)) {
+    node = node.parent;
+  }
+  return node;
 }
 
 /* Reutilizables del posado (sin basura por llamada). */
@@ -336,6 +364,122 @@ function relaxCharacterArms(skeleton) {
   root.updateMatrixWorld(true, true);
 }
 
+/* ------------------------------------------------------------------ cabeza */
+/**
+ * Región de la CARA dentro del atlas de piel (`T_Regular_*_BaseColor`,
+ * idéntica en ambos géneros): el pack no trae geometría de cabeza, pero el
+ * atlas sí trae una cara completa (ojos, nariz, labios) que la cabeza
+ * procedural reusa. Rectángulo medido sobre la textura (u → derecha en la
+ * imagen, v = 1 arriba): la nariz queda centrada en u ≈ 0.15 y los ojos en
+ * v ≈ 0.82. Fuera del rectángulo hay manos/dedos (derecha) y ropa interior
+ * (abajo), así que el mapeado lo sujeta a los bordes para no manchar la sien.
+ */
+const HEAD_FACE_UV = { u0: 0.005, u1: 0.29, v0: 0.665, v1: 0.995 };
+/** Semi-apertura de la cara sobre la esfera (±65°): el frente cubre el atlas. */
+const HEAD_FACE_HALF_ANGLE = 1.134;
+
+/**
+ * Añade la cabeza del personaje: una esfera ovoide vestida con la región de
+ * la cara del atlas de piel y sujeta al hueso `Head` para que siga a la
+ * capucha. El tamaño y el centro se derivan de la caja de la capucha montada
+ * (funciona en ambos géneros aunque la capucha masculina es más alta); la
+ * cara queda ligeramente hundida tras la apertura de la capucha.
+ *
+ * La cabeza NO es esqueletada (es rígida): no entra en `meshes` para no
+ * romper el invariante de esqueleto compartido, y se devuelve aparte.
+ *
+ * @param {THREE.Group} group Grupo del personaje (espacio Y-up del juego).
+ * @param {THREE.SkinnedMesh[]} meshes Mallas ya adoptadas y vestidas.
+ * @param {THREE.Skeleton} skeleton Esqueleto compartido ya relajado.
+ * @param {object} look Look normalizado (género → atlas de piel, tono).
+ * @param {object} manifest Manifiesto de personajes.
+ * @returns {THREE.Mesh|null} La cabeza, ya colgada del hueso.
+ */
+function attachGuardianHead(group, meshes, skeleton, look, manifest) {
+  if (!group || !skeleton?.bones?.length) return null;
+  group.updateMatrixWorld(true, true);
+  const headBone = skeleton.getBoneByName('Head')
+    ?? skeleton.getBoneByName('head')
+    ?? skeleton.getBoneByName('neck_01');
+  const parent = headBone ?? skeleton.bones[0]?.parent ?? group;
+
+  // La capucha da la talla y el sitio: la cabeza vive dentro de su caja.
+  const hood = meshes.find((mesh) => mesh.userData.partSlot === 'head');
+  const center = new THREE.Vector3();
+  let radius = 0.105;
+  if (hood) {
+    const box = new THREE.Box3().setFromObject(hood, true);
+    if (!box.isEmpty()) {
+      const size = box.getSize(new THREE.Vector3());
+      const c = box.getCenter(new THREE.Vector3());
+      radius = THREE.MathUtils.clamp(Math.min(size.x, size.y, size.z) * 0.34, 0.07, 0.14);
+      center.set(c.x, c.y - size.y * 0.045, c.z + size.z * 0.06);
+    }
+  }
+  if (center.lengthSq() === 0) {
+    // Sin capucha medible (no debería pasar: hay repuesto ranger): anatomía
+    // sobre el cuello (el personaje mira a +Z en el espacio del grupo).
+    if (headBone) headBone.getWorldPosition(center);
+    else center.set(0, 1.56, 0);
+    center.y += 0.075; center.z += 0.035;
+  }
+
+  // Ovoide: esfera con mandíbula afinada y escala de cabeza (0.94, 1.16, 0.98).
+  const geometry = new THREE.SphereGeometry(radius, 28, 20);
+  const position = geometry.attributes.position;
+  const uv = geometry.attributes.uv;
+  for (let i = 0; i < position.count; i += 1) {
+    let x = position.getX(i);
+    const y = position.getY(i);
+    let z = position.getZ(i);
+    const yn = THREE.MathUtils.clamp(y / radius, -1, 1);
+    if (yn < 0) {
+      // Afinamiento de mandíbula: la esfera pura parece una pelota; estrechar
+      // abajo la hace leer como una cabeza dentro de la capucha.
+      const taper = 1 - 0.14 * -yn;
+      x *= taper;
+      z = z > 0 ? z * (1 - 0.06 * -yn) : z * taper;
+      position.setX(i, x);
+      position.setZ(i, z);
+    }
+    // Mapeado cilíndrico a la región de la cara: el frente de la esfera
+    // (±65° de azimut) cubre el rectángulo de ojos/nariz/labios; más allá se
+    // sujeta al borde (piel lisa, oculta por la capucha). Los ojos del atlas
+    // (v ≈ 0.82) caen sobre el ecuador de la esfera, como en una cara real.
+    const theta = Math.atan2(x, z);
+    const t = THREE.MathUtils.clamp(theta / HEAD_FACE_HALF_ANGLE, -1, 1);
+    uv.setXY(
+      i,
+      HEAD_FACE_UV.u0 + (t * 0.5 + 0.5) * (HEAD_FACE_UV.u1 - HEAD_FACE_UV.u0),
+      HEAD_FACE_UV.v0 + ((yn + 1) / 2) * (HEAD_FACE_UV.v1 - HEAD_FACE_UV.v0),
+    );
+  }
+  geometry.scale(0.94, 1.16, 0.98);
+  geometry.computeVertexNormals();
+
+  const skinName = look.gender === 'male' ? 'MI_Regular_Male' : 'MI_Regular_Female';
+  const material = new THREE.MeshStandardMaterial({
+    name: skinName,
+    roughness: 0.9,
+    metalness: 0.0,
+  });
+  applyLookToMaterial(material, skinName, look, manifest);
+
+  const head = new THREE.Mesh(geometry, material);
+  head.name = 'GuardianHead';
+  head.castShadow = true;
+  head.receiveShadow = false;
+  head.frustumCulled = false;
+  head.position.copy(center);
+  group.add(head);
+  group.updateMatrixWorld(true, true);
+  // `attach` conserva el sitio en el mundo y a partir de aquí la cabeza
+  // sigue al hueso (incluida la escala del ajuste de tamaño).
+  parent.attach(head);
+  group.updateMatrixWorld(true, true);
+  return head;
+}
+
 /**
  * Piezas necesarias para un look (sin `acc` si no lleva hombreras).
  * @returns {Array<{gender:string, outfit:string, slot:string}>}
@@ -367,7 +511,8 @@ function clonedBonesInOrder(clonedScene, sourceOrder) {
  * texturas aplicadas (se cargan en segundo plano si aún no están).
  * @param {object} look
  * @returns {Promise<{ group: THREE.Group, meshes: THREE.SkinnedMesh[],
- *   skeleton: THREE.Skeleton, look: object, id: string }|null>}
+ *   skeleton: THREE.Skeleton, head: THREE.Mesh|null,
+ *   look: object, id: string }|null>}
  */
 export async function assembleCharacter(look) {
   const normalized = normalizeLook(look);
@@ -462,12 +607,16 @@ export async function assembleCharacter(look) {
   // armadura (dentro del envoltorio Z-up→Y-up), así todas las mallas viven en
   // el mismo espacio que los huesos y las mediciones de caja son correctas.
   const armature = skeleton.bones[0].parent ?? group;
-  for (const mesh of adopt(baseScene)) meshes.push(mesh);
+  for (const mesh of adopt(baseScene)) {
+    mesh.userData.partSlot = usable[0].part.slot;
+    meshes.push(mesh);
+  }
   for (let i = 1; i < usable.length; i += 1) {
     const clone = usable[i].gltf.scene.clone(true);
     for (const mesh of adopt(clone)) {
       mesh.parent?.remove(mesh);
       armature.add(mesh);
+      mesh.userData.partSlot = usable[i].part.slot;
       meshes.push(mesh);
     }
   }
@@ -488,6 +637,14 @@ export async function assembleCharacter(look) {
   //     tamaño para que la caja se mida ya en pose natural.
   relaxCharacterArms(skeleton);
 
+  // 3c. Cabeza con rostro: el pack no trae geometría de cabeza (la capucha
+  //     viene vacía), así que se añade una cabeza procedural vestida con la
+  //     región de la cara del atlas de piel, sujeta al hueso `Head`. Se hace
+  //     ANTES del ajuste para que mida la capucha aún sin escalar y herede la
+  //     escala final como el resto del cuerpo. No entra en `meshes` (es una
+  //     malla rígida, no esqueletada): se devuelve aparte como `head`.
+  const head = attachGuardianHead(group, meshes, skeleton, normalized, manifest);
+
   // 4. Normalizar al tamaño del juego (1.85 m, pies en el suelo, centrado).
   const fit = manifest.fit ?? { height: 1.85, center: true, ground: 0 };
   const holder = createFittedHolder(group, fit);
@@ -502,6 +659,7 @@ export async function assembleCharacter(look) {
     group: holder.pivot,
     meshes,
     skeleton,
+    head,
     look: normalized,
     id,
     source: `character:${id}`,

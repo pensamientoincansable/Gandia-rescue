@@ -205,9 +205,23 @@ de sus clips de animación.
 | `models/npc.glb` | `Idle`, `Walk`, `Talk` |
 | `models/animals/*.glb` (8 especies) | `Idle` (+ `Fly` en la gaviota) |
 
-#### Personaje jugable: modelo importado de SupaVoxel
+#### Personaje jugable: pack modular con rostro (`media/Fantasy Character`)
 
-El personaje que controlas a pie usa un **`.glb` externo generado con IA en
+El personaje que controlas a pie se monta con las 20 piezas del pack modular
+(cuerpo, brazos, piernas, pies, capucha y hombreras × aldeano/guardabosques ×
+masculino/femenino, ver `src/three/CharacterSystem.js`): se reenlazan a un
+esqueleto único de 65 huesos, se relajan los brazos (la pose del FBX es en T)
+y se visten con las texturas del manifiesto `config/characters.json`. Como el
+pack no trae geometría de cabeza (la capucha viene vacía), el montaje añade
+una cabeza procedural con el rostro del atlas de piel, sujeta al hueso `Head`
+y teñida con el tono de piel del look. El movimiento lo aporta el rig
+procedural de `AnimatedEntity` (zancada con rodillas, brazos en contrafase,
+respiración), con ejes que siguen el rumbo del personaje.
+
+#### Respaldo: modelo importado de SupaVoxel
+
+Si el pack modular no carga, el personaje a pie usa un **`.glb` externo
+generado con IA en
 [SupaVoxel](https://supavoxel.com/embed/cmtw2haaq0biajq9o0ay225br)**. Como un
 asset externo llega con unidades y orientación impredecibles, el motor lo
 prepara solo antes de usarlo:

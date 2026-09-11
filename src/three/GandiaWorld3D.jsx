@@ -26,6 +26,18 @@ const ACTION_TO_DRIVE_INPUT = {
 };
 
 /**
+ * Tope de pixelRatio del renderizador: en pantallas táctiles se limita a 1.5
+ * (mismo aspecto visual, ~40% menos píxeles que sombrear por frame).
+ * @returns {number}
+ */
+function maxPixelRatio() {
+  const dpr = (typeof window !== 'undefined' && window.devicePixelRatio) || 1;
+  const coarse = typeof window !== 'undefined' && typeof window.matchMedia === 'function'
+    && window.matchMedia('(pointer: coarse)').matches;
+  return Math.min(dpr, coarse ? 1.5 : 2);
+}
+
+/**
  * Escenario 3D interactivo en Three.js para la exploración y rescate en Gandía.
  * Controla el ciclo de renderizado WebGL, la furgoneta de rescate,
  * los elementos instanciados, la fauna, los lugareños y las pistas.
@@ -81,6 +93,19 @@ export default function GandiaWorld3D({
     jump: false,
   });
   const inputManagerRef = useRef(null);
+  // Espejos mutables para el bucle de animación: `animate` se crea UNA VEZ
+  // (efecto con []) y leería valores congelados si accediera a `virtualInput`
+  // o `zoneId` desde el closure —ese era el bug que dejaba quietos los
+  // botones táctiles—. Estos efectos mantienen las copias al día sin recrear
+  // el bucle ni la escena.
+  const virtualInputRef = useRef({});
+  const zoneRef = useRef(zoneId);
+  useEffect(() => { zoneRef.current = zoneId; }, [zoneId]);
+  useEffect(() => {
+    if (virtualInput && typeof virtualInput === 'object') {
+      Object.assign(virtualInputRef.current, virtualInput);
+    }
+  }, [virtualInput]);
   const statsRef = useRef(DEFAULT_PLAYER_STATS);
   const triggerContextInteractionRef = useRef(() => {});
   // La transición a pie debe ocurrir en RescueVan, que conserva la posición
@@ -159,10 +184,13 @@ export default function GandiaWorld3D({
         antialias: true,
         alpha: false,
         powerPreference: 'high-performance',
-        preserveDrawingBuffer: true,
+        // Sin búfer retenido: la captura de foto renderiza y lee el píxel en
+        // la misma tarea (ver `onCaptureReady`), así que no lo necesita; en
+        // móviles retenerlo lastra la GPU sin cambiar lo que se ve.
+        preserveDrawingBuffer: false,
       });
       renderer.setSize(width, height);
-      renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+      renderer.setPixelRatio(maxPixelRatio());
       if (renderer.shadowMap) {
         renderer.shadowMap.enabled = true;
         renderer.shadowMap.type = THREE.PCFSoftShadowMap;
@@ -229,20 +257,24 @@ export default function GandiaWorld3D({
       const time = now * 0.001;
       lastT = now;
 
+      // Entrada combinada teclado + táctil (desde los espejos: el closure de
+      // este bucle conserva los valores del primer render).
+      const virt = virtualInputRef.current;
       const currentInput = {
-        forward: inputRef.current.forward || !!virtualInput?.forward,
-        backward: inputRef.current.backward || !!virtualInput?.backward,
-        left: inputRef.current.left || !!virtualInput?.left,
-        right: inputRef.current.right || !!virtualInput?.right,
-        handbrake: inputRef.current.handbrake || !!virtualInput?.handbrake,
+        forward: inputRef.current.forward || !!virt.forward,
+        backward: inputRef.current.backward || !!virt.backward,
+        left: inputRef.current.left || !!virt.left,
+        right: inputRef.current.right || !!virt.right,
+        handbrake: inputRef.current.handbrake || !!virt.handbrake,
         // Salto: flanco de entrada que consume el bucle de física este frame.
-        jump: inputRef.current.jump,
+        jump: inputRef.current.jump || !!virt.jump,
       };
       inputRef.current.jump = false;
+      virt.jump = false; // one-shot táctil: se consume al leerlo
 
       terrain.update(delta, time);
       instanced.update(time);
-      van.update(delta, currentInput, zoneId, time);
+      van.update(delta, currentInput, zoneRef.current, time);
       van.updateCamera(camera, delta);
       fauna.update(delta, time);
       npcs.update(time, camera, delta);
