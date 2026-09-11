@@ -72,6 +72,17 @@ export const copy = {
     gyroscope: 'Giroscopio', gyroActive: 'Giroscopio activo: mueve tu dispositivo',
     qualityUltra: 'Ultra HD 360°',
     info: 'Gandía Natura',
+
+    customize: 'Personalizar guardián', customizeTitle: 'Personaliza a tu guardián',
+    customizeDesc: 'Elige cuerpo, equipo, colores y piel. Este personaje te acompañará a pie en los rescates.',
+    charBody: 'Cuerpo', charBodyFemale: 'Femenino', charBodyMale: 'Masculino',
+    charOutfit: 'Equipo', charOutfitPeasant: 'Aldeano/a', charOutfitRanger: 'Guardabosques',
+    charColors: 'Colores del tejido', charVariantOne: 'Tinte 1', charVariantTwo: 'Tinte 2',
+    charShoulders: 'Hombreras', charShouldersOn: 'Con hombreras', charShouldersOff: 'Sin hombreras',
+    charSkin: 'Tono de piel', charSkinDark: 'Oscuro', charSkinMedium: 'Medio', charSkinLight: 'Claro',
+    charHead: 'Cabeza', charHeadHood: 'La capucha del pack cubre la cabeza.',
+    charSave: 'Guardar guardián', charSaved: 'Guardián guardado', charUnsaved: 'Cambios sin guardar',
+    charReset: 'Aspecto por defecto', charBack: 'Volver', charHint: 'Arrastra para girar · rueda para acercar',
   },
   va: {
     rescue: 'Mode rescat', explore: 'Mode exploració', shelter: 'El meu refugi', settings: 'Configuració', profile: 'El meu perfil', species: 'Espècies', credits: 'Informació',
@@ -142,6 +153,17 @@ export const copy = {
     gyroscope: 'Giroscopi', gyroActive: 'Giroscopi actiu: mou el teu dispositiu',
     qualityUltra: 'Ultra HD 360°',
     info: 'Gandia Natura',
+
+    customize: 'Personalitzar guardià', customizeTitle: 'Personalitza el teu guardià',
+    customizeDesc: 'Tria cos, equip, colors i pell. Este personatge t\'acompanyarà a peu en els rescats.',
+    charBody: 'Cos', charBodyFemale: 'Femení', charBodyMale: 'Masculí',
+    charOutfit: 'Equip', charOutfitPeasant: 'Aldeà/ana', charOutfitRanger: 'Guardabosc',
+    charColors: 'Colors del teixit', charVariantOne: 'Tint 1', charVariantTwo: 'Tint 2',
+    charShoulders: 'Muscleres', charShouldersOn: 'Amb muscleres', charShouldersOff: 'Sense muscleres',
+    charSkin: 'To de pell', charSkinDark: 'Fosc', charSkinMedium: 'Mitjà', charSkinLight: 'Clar',
+    charHead: 'Cap', charHeadHood: 'La caputxa del pack cobrix el cap.',
+    charSave: 'Guardar guardià', charSaved: 'Guardià guardat', charUnsaved: 'Canvis sense guardar',
+    charReset: 'Aspecte per defecte', charBack: 'Tornar', charHint: 'Arrossega per a girar · roda per a apropar',
   },
   en: {
     rescue: 'Rescue mode', explore: 'Explore mode', shelter: 'My shelter', settings: 'Settings', profile: 'My profile', species: 'Species', credits: 'Information',
@@ -212,6 +234,17 @@ export const copy = {
     gyroscope: 'Motion control', gyroActive: 'Motion active: move your device',
     qualityUltra: 'Ultra HD 360°',
     info: 'Gandía Natura',
+
+    customize: 'Customise guardian', customizeTitle: 'Customise your guardian',
+    customizeDesc: 'Choose body, outfit, colours and skin. This character joins you on foot during rescues.',
+    charBody: 'Body', charBodyFemale: 'Female', charBodyMale: 'Male',
+    charOutfit: 'Outfit', charOutfitPeasant: 'Villager', charOutfitRanger: 'Ranger',
+    charColors: 'Fabric colours', charVariantOne: 'Dye 1', charVariantTwo: 'Dye 2',
+    charShoulders: 'Pauldrons', charShouldersOn: 'With pauldrons', charShouldersOff: 'Without pauldrons',
+    charSkin: 'Skin tone', charSkinDark: 'Dark', charSkinMedium: 'Medium', charSkinLight: 'Light',
+    charHead: 'Head', charHeadHood: 'The pack\'s hood covers the head.',
+    charSave: 'Save guardian', charSaved: 'Guardian saved', charUnsaved: 'Unsaved changes',
+    charReset: 'Default look', charBack: 'Back', charHint: 'Drag to rotate · scroll to zoom',
   },
 };
 

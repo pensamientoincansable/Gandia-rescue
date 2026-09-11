@@ -68,6 +68,22 @@ expect(window.document.body.textContent.includes('Laia Martí'), 'aparece el nom
 expect(window.document.body.textContent.includes('Nv. 1'), 'empieza en nivel 1');
 expect($$('.mode-card').length === 3, 'tres modos: rescate, exploración y refugio');
 
+console.log('· Personalización del guardián');
+click($('.player-customize'));
+await sleep(300);
+expect($('.char-screen'), 'pantalla de personalización cargada');
+expect($$('.char-option').length >= 9, 'opciones de aspecto disponibles');
+expect(window.document.body.textContent.includes('Hombreras') || window.document.body.textContent.includes('Muscleres') || window.document.body.textContent.includes('Pauldrons'),
+  'las hombreras aparecen con el atuendo guardabosques');
+click($$('.char-options--3 .char-option')[2]); // tono de piel claro
+await sleep(50);
+expect($('.char-stage__status .is-dirty'), 'la previsualización marca cambios sin guardar');
+click($('.char-actions__save'));
+await sleep(300);
+expect($('.menu-screen'), 'al guardar se vuelve al menú');
+const guardianLook = JSON.parse(window.localStorage.getItem('gandia-guardian-look') ?? 'null');
+expect(guardianLook?.outfit === 'ranger' && guardianLook?.skin === 'light', 'el look del guardián queda persistido');
+
 console.log('· Modo rescate (geolocalización)');
 click($('.mode-card--rescue'));
 await sleep(200);

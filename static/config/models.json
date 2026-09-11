@@ -3,33 +3,86 @@
   "description": "Manifiesto de modelos 3D (.glb/.gltf) para humanos y animales. Cada ruta se resuelve relativa al documento (public/models/). Si un modelo no existe o falla su descarga, el juego prueba la siguiente candidata de `paths` y, en última instancia, el monigote de primitivas como respaldo.",
   "npc": {
     "path": "models/npc.glb",
-    "animations": { "idle": "Idle", "walk": "Walk", "talk": "Talk" }
+    "animations": {
+      "idle": "Idle",
+      "walk": "Walk",
+      "talk": "Talk"
+    }
   },
   "ranger": {
-    "description": "Personaje jugable. Modelo importado de SupaVoxel (embed cmtw2haaq0biajq9o0ay225br). `paths` es una cadena de candidatas: copia local descargable con `npm run assets:player`, URL original del CDN y, por último, el ranger procedural del repositorio.",
+    "description": "Personaje jugable de respaldo: se usa si el pack de personajes modulares (media/Fantasy Character, montado por CharacterSystem) no está disponible. `paths` es una cadena de candidatas: copia local descargable con `npm run assets:player` y el ranger procedural del repositorio.",
     "path": "models/ranger-supavoxel.glb",
     "paths": [
       "models/ranger-supavoxel.glb",
-      "https://cdn.supavoxel.com/users/V93uvbFB8cOlJCbZLf8wryMIcaXA9XJx/models/3a833456-7355-4fcd-8f76-427d711a67d6_textured.glb",
       "models/ranger.glb"
     ],
-    "animations": { "idle": "Idle", "walk": "Walk", "run": "Run", "jump": "Jump" },
+    "animations": {
+      "idle": "Idle",
+      "walk": "Walk",
+      "run": "Run",
+      "jump": "Jump"
+    },
     "fit": {
       "height": 1.85,
       "center": true,
       "ground": 0,
-      "rotation": { "x": 0, "y": 0, "z": 0 }
+      "rotation": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      }
     },
-    "source": "SupaVoxel — modelo 3D generado con IA"
+    "source": "Personaje de respaldo (descargable o procedural)"
   },
   "animals": {
-    "erizo": { "path": "models/animals/erizo.glb", "animations": { "idle": "Idle" } },
-    "jabali": { "path": "models/animals/jabali.glb", "animations": { "idle": "Idle" } },
-    "gavina": { "path": "models/animals/gaviota.glb", "animations": { "idle": "Fly", "walk": "Walk" } },
-    "conejo": { "path": "models/animals/conejo.glb", "animations": { "idle": "Idle" } },
-    "gato": { "path": "models/animals/gato.glb", "animations": { "idle": "Idle" } },
-    "mochuelo": { "path": "models/animals/mochuelo.glb", "animations": { "idle": "Idle" } },
-    "garza": { "path": "models/animals/garza.glb", "animations": { "idle": "Idle" } },
-    "paloma": { "path": "models/animals/paloma.glb", "animations": { "idle": "Idle" } }
+    "erizo": {
+      "path": "models/animals/erizo.glb",
+      "animations": {
+        "idle": "Idle"
+      }
+    },
+    "jabali": {
+      "path": "models/animals/jabali.glb",
+      "animations": {
+        "idle": "Idle"
+      }
+    },
+    "gavina": {
+      "path": "models/animals/gaviota.glb",
+      "animations": {
+        "idle": "Fly",
+        "walk": "Walk"
+      }
+    },
+    "conejo": {
+      "path": "models/animals/conejo.glb",
+      "animations": {
+        "idle": "Idle"
+      }
+    },
+    "gato": {
+      "path": "models/animals/gato.glb",
+      "animations": {
+        "idle": "Idle"
+      }
+    },
+    "mochuelo": {
+      "path": "models/animals/mochuelo.glb",
+      "animations": {
+        "idle": "Idle"
+      }
+    },
+    "garza": {
+      "path": "models/animals/garza.glb",
+      "animations": {
+        "idle": "Idle"
+      }
+    },
+    "paloma": {
+      "path": "models/animals/paloma.glb",
+      "animations": {
+        "idle": "Idle"
+      }
+    }
   }
 }

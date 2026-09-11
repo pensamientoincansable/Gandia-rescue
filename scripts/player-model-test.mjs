@@ -1,9 +1,12 @@
 /**
- * Verifica la sustitución del modelo del personaje jugable por un `.glb`
- * externo (SupaVoxel) sin romper el juego:
- *  1. el manifiesto declara la cadena de candidatas y un ajuste de escala sensato;
- *  2. `ModelFitter` normaliza cualquier asset a 1.85 m, pies en el suelo y centrado;
- *  3. si la copia local falta, se usa la URL remota, y si todo falla, el monigote;
+ * Verifica el personaje jugable y su cadena de respaldo sin romper el juego:
+ *  1. el guardián se monta desde el pack `media/Fantasy Character`
+ *     (CharacterSystem + config/characters.json) y mide 1.85 m con los pies
+ *     en el suelo;
+ *  2. si el pack no está disponible, `models.json` declara la cadena de
+ *     respaldo (copia local opcional → ranger procedural) y el monigote final;
+ *  3. `ModelFitter` normaliza cualquier asset a 1.85 m, pies en el suelo y
+ *     centrado (los modelos externos vienen en cualquier unidad/orientación);
  *  4. el guardián a pie integra el modelo (altura real, animación procedural).
  *
  * Ejecutar: node scripts/player-model-test.mjs
@@ -24,18 +27,28 @@ define('ProgressEvent', dom.window.ProgressEvent);
 // Se conserva el fetch nativo: la sección final lo necesita para hablar con el
 // servidor HTTP local (el stub de abajo sólo sirve los JSON de configuración).
 const nativeFetch = globalThis.fetch;
-define('fetch', async (url) => {
-  const name = new URL(url).pathname.split('/').pop();
-  const body = readFileSync(resolve(root, 'public/config', name), 'utf8');
-  return { ok: true, status: 200, json: async () => JSON.parse(body) };
+let serveAssets = true;
+define('fetch', async (input) => {
+  const url = typeof input === 'string' ? input : input?.url ?? String(input);
+  const pathname = decodeURIComponent(new URL(url).pathname).replace(/^\/+/, '');
+  if (!serveAssets) return { ok: false, status: 404, json: async () => ({}), arrayBuffer: async () => new ArrayBuffer(0) };
+  try {
+    const body = readFileSync(resolve(root, 'public', pathname));
+    const text = body.toString('utf8');
+    if (pathname.endsWith('.json')) return { ok: true, status: 200, json: async () => JSON.parse(text) };
+    return { ok: true, status: 200, arrayBuffer: async () => body.buffer.slice(body.byteOffset, body.byteOffset + body.byteLength) };
+  } catch {
+    return { ok: false, status: 404, json: async () => ({}), arrayBuffer: async () => new ArrayBuffer(0) };
+  }
 });
 
 const THREE = await import('three');
 const { createFittedHolder, measureObject, normalizeFit } = await import('../src/three/ModelFitter.js');
 const {
-  DEFAULT_MODELS, PLAYER_MODEL_LOCAL_PATH, PLAYER_MODEL_REMOTE_URL,
+  DEFAULT_MODELS, PLAYER_MODEL_LOCAL_PATH,
   clearModelCache, loadModel, loadModelCandidates, setModelResolverForTests,
 } = await import('../src/three/ModelLoader.js');
+const { resetCharacterSystem } = await import('../src/three/CharacterSystem.js');
 const { AnimatedEntity } = await import('../src/three/AnimatedEntity.js');
 const { RescueVan } = await import('../src/three/RescueVan.js');
 const { TerrainBuilder } = await import('../src/three/TerrainBuilder.js');
@@ -63,30 +76,31 @@ function fakeExternalScene({ tall = 100, wide = 40, upAxis = 'y', offset = 25 } 
 /** GLTF simulado (sin animaciones, como los generados con IA). */
 const fakeGltf = (options) => ({ scene: fakeExternalScene(options), animations: [] });
 
-console.log('· Manifiesto del personaje jugable');
+console.log('· Manifiesto del personaje jugable (respaldo del pack)');
 const manifest = JSON.parse(readFileSync(resolve(root, 'public/config/models.json'), 'utf8'));
 const ranger = manifest.ranger;
 const candidates = ranger.paths ?? [];
-expect(Array.isArray(candidates) && candidates.length >= 2, 'declara una cadena de candidatas (local → remota → respaldo)');
+expect(Array.isArray(candidates) && candidates.length >= 2, 'declara una cadena de candidatas (copia local → respaldo)');
 expect(candidates[0] === PLAYER_MODEL_LOCAL_PATH, `la primera candidata es la copia local (${PLAYER_MODEL_LOCAL_PATH})`);
-expect(candidates.includes(PLAYER_MODEL_REMOTE_URL), 'incluye la URL original del CDN de SupaVoxel');
+expect(!candidates.some((path) => /^https?:\/\//.test(path)), 'sin URLs remotas: el modelo remoto (SupaVoxel) no se usa');
 expect(candidates.includes('models/ranger.glb') && existsSync(resolve(root, 'public/models/ranger.glb')),
   'conserva el ranger procedural como último respaldo y existe en el repositorio');
-expect(candidates.every((path) => /^https?:\/\//.test(path) || existsSync(resolve(root, 'public', path)) || path === PLAYER_MODEL_LOCAL_PATH),
+expect(candidates.every((path) => existsSync(resolve(root, 'public', path)) || path === PLAYER_MODEL_LOCAL_PATH),
   'toda candidata local o existe o es la copia descargable');
 const fit = ranger.fit ?? {};
 expect(fit.height > 1.5 && fit.height < 2.2, `altura objetivo humana (${fit.height} m)`);
-expect(DEFAULT_MODELS.ranger.paths?.includes(PLAYER_MODEL_REMOTE_URL), 'los valores por defecto replican la cadena (sin models.json)');
+expect(Array.isArray(DEFAULT_MODELS.ranger.paths) && DEFAULT_MODELS.ranger.paths.includes('models/ranger.glb'),
+  'los valores por defecto replican la cadena (sin models.json)');
 for (const copy of ['public/config/models.json', 'static/config/models.json']) {
   const json = JSON.parse(readFileSync(resolve(root, copy), 'utf8'));
-  expect(json.ranger?.paths?.includes(PLAYER_MODEL_REMOTE_URL), `${copy}: copia publicada al día`);
+  expect(json.ranger?.paths?.includes('models/ranger.glb'), `${copy}: copia publicada al día`);
 }
 if (existsSync(resolve(root, 'public', PLAYER_MODEL_LOCAL_PATH))) {
   const glb = readFileSync(resolve(root, 'public', PLAYER_MODEL_LOCAL_PATH));
   expect(glb.readUInt32LE(0) === 0x46546c67, 'la copia local descargada es un .glb válido');
   console.log(`  ℹ copia local presente: ${statSync(resolve(root, 'public', PLAYER_MODEL_LOCAL_PATH)).size.toLocaleString('es-ES')} B`);
 } else {
-  console.log('  ℹ copia local ausente: el juego cargará el modelo desde la URL remota');
+  console.log('  ℹ copia local ausente: el guardián usa el pack de personajes o el ranger procedural');
 }
 
 console.log('· Ajuste automático de escala y orientación (ModelFitter)');
@@ -121,7 +135,7 @@ console.log('· Ajuste automático de escala y orientación (ModelFitter)');
 }
 
 console.log('· Cadena de candidatas del modelo');
-setModelResolverForTests((path) => (path === PLAYER_MODEL_REMOTE_URL ? fakeGltf({ tall: 180 }) : null));
+setModelResolverForTests((path) => (path === PLAYER_MODEL_LOCAL_PATH ? fakeGltf({ tall: 180 }) : null));
 {
   const entity = new AnimatedEntity({
     buildFallback: () => new THREE.Mesh(new THREE.BoxGeometry(0.5, 1.8, 0.3)),
@@ -129,26 +143,25 @@ setModelResolverForTests((path) => (path === PLAYER_MODEL_REMOTE_URL ? fakeGltf(
     label: 'test',
   });
   const result = await entity.setModelSources(
-    [PLAYER_MODEL_LOCAL_PATH, PLAYER_MODEL_REMOTE_URL, 'models/ranger.glb'],
+    [PLAYER_MODEL_LOCAL_PATH, 'models/ranger.glb'],
     { idle: 'Idle' },
     { fit: { height: 1.85 } },
   );
-  expect(result.loaded && result.path === PLAYER_MODEL_REMOTE_URL, 'si falta la copia local, carga desde la URL remota');
+  expect(result.loaded && result.path === PLAYER_MODEL_LOCAL_PATH, 'si la copia local carga, es la elegida');
   expect(entity.fallback === null, 'retira el monigote al llegar el modelo');
   const box = new THREE.Box3().setFromObject(entity.visual, true);
-  expect(near(box.max.y - box.min.y, 1.85, 0.02), 'el modelo remoto se normaliza a 1.85 m');
+  expect(near(box.max.y - box.min.y, 1.85, 0.02), 'el modelo externo se normaliza a 1.85 m');
 }
 {
   setModelResolverForTests(() => null);
   const mannequin = new THREE.Mesh(new THREE.BoxGeometry(0.5, 1.8, 0.3));
   const entity = new AnimatedEntity({ buildFallback: () => mannequin, motion: 'idle' });
-  const result = await entity.setModelSources([PLAYER_MODEL_LOCAL_PATH, PLAYER_MODEL_REMOTE_URL], {}, { fit: { height: 1.85 } });
+  const result = await entity.setModelSources([PLAYER_MODEL_LOCAL_PATH], {}, { fit: { height: 1.85 } });
   expect(!result.loaded && entity.fallback === mannequin, 'si ninguna candidata carga, el monigote sigue en escena');
 }
 setModelResolverForTests(null);
 
 console.log('· Integración con el guardián a pie');
-setModelResolverForTests((path) => (path === PLAYER_MODEL_REMOTE_URL ? fakeGltf({ tall: 180 }) : null));
 {
   const scene = new THREE.Scene();
   const terrain = new TerrainBuilder(scene);
@@ -156,8 +169,9 @@ setModelResolverForTests((path) => (path === PLAYER_MODEL_REMOTE_URL ? fakeGltf(
   const van = new RescueVan(scene, terrain, stats);
   const result = await van._applyRangerModel();
 
-  expect(result.loaded && result.path === PLAYER_MODEL_REMOTE_URL, 'RescueVan usa el modelo configurado en models.json');
-  expect(van.rangerModelSource === PLAYER_MODEL_REMOTE_URL, 'deja constancia del asset activo');
+  expect(result.loaded && String(result.path).startsWith('character:'),
+    `RescueVan monta el guardián del pack de personajes (${result.path})`);
+  expect(van.rangerModelSource === result.path, 'deja constancia del asset activo');
   expect(van.rangerAvatar.fallback === null && van.rangerAvatar.hasModel, 'el avatar sustituye al monigote');
 
   van.rangerAvatar.root.position.set(0, 0, 0);
@@ -177,11 +191,28 @@ setModelResolverForTests((path) => (path === PLAYER_MODEL_REMOTE_URL ? fakeGltf(
   const visual = van.rangerAvatar.visual;
   van.rangerAvatar.setMotion('walk');
   for (let frame = 0; frame < 30; frame += 1) van.rangerAvatar.update(1 / 60, frame / 60);
-  expect(visual.position.y !== 0 || visual.rotation.x !== 0, 'camina con balanceo aunque el .glb no traiga animaciones');
+  expect(visual.position.y !== 0 || visual.rotation.x !== 0, 'camina con balanceo aunque el pack no traiga animaciones');
   const walkedLean = visual.rotation.x;
   van.rangerAvatar.setMotion('idle');
   for (let frame = 0; frame < 90; frame += 1) van.rangerAvatar.update(1 / 60, frame / 60);
   expect(Math.abs(visual.rotation.x) < Math.abs(walkedLean) + 1e-6, 'en reposo se endereza de nuevo');
+}
+
+console.log('· Respaldo si el pack de personajes no está disponible');
+{
+  serveAssets = false;
+  resetCharacterSystem();
+  setModelResolverForTests((path) => (path === PLAYER_MODEL_LOCAL_PATH ? fakeGltf({ tall: 180 }) : null));
+  const scene = new THREE.Scene();
+  const terrain = new TerrainBuilder(scene);
+  const stats = JSON.parse(readFileSync(resolve(root, 'public/config/player_stats.json'), 'utf8'));
+  const van = new RescueVan(scene, terrain, stats);
+  const result = await van._applyRangerModel();
+  expect(result.loaded && result.path === PLAYER_MODEL_LOCAL_PATH, `sin pack usa la copia local del manifiesto (${result.path})`);
+  const box = new THREE.Box3().setFromObject(van.rangerAvatar.root, true);
+  expect(near(box.max.y - box.min.y, 1.85, 0.02), 'el respaldo también se normaliza a 1.85 m');
+  serveAssets = true;
+  resetCharacterSystem();
 }
 
 setModelResolverForTests(null);

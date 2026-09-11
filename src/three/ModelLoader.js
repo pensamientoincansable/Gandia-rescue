@@ -160,16 +160,17 @@ export const DEFAULT_MODELS = {
     animations: { idle: 'Idle', walk: 'Walk', talk: 'Talk' },
   },
   ranger: {
-    // Personaje jugable. `paths` es una cadena de candidatas probadas en orden:
-    //  1. copia local del modelo elegido (se descarga con `npm run assets:player`);
-    //  2. el asset original en el CDN de SupaVoxel (funciona sin instalar nada);
-    //  3. el ranger procedural del repositorio, siempre presente.
+    // Personaje jugable DE RESPALDO: el aspecto principal del guardián lo
+    // monta `CharacterSystem` con el pack `media/Fantasy Character`
+    // (config/characters.json). Si el pack no está disponible, `paths` se
+    // prueba en orden: copia local opcional (`npm run assets:player`) y el
+    // ranger procedural del repositorio, siempre presente.
     path: PLAYER_MODEL_LOCAL_PATH,
-    paths: [PLAYER_MODEL_LOCAL_PATH, PLAYER_MODEL_REMOTE_URL, 'models/ranger.glb'],
+    paths: [PLAYER_MODEL_LOCAL_PATH, 'models/ranger.glb'],
     animations: { idle: 'Idle', walk: 'Walk', run: 'Run', jump: 'Jump' },
     // Los assets externos no vienen en metros ni miran a +Z: `fit` los ajusta.
     fit: { height: 1.85, center: true, ground: 0, rotation: { x: 0, y: 0, z: 0 } },
-    source: PLAYER_MODEL_SOURCE,
+    source: 'Personaje de respaldo (descargable o procedural)',
   },
   animals: {
     erizo: { path: 'models/animals/erizo.glb', animations: { idle: 'Idle' } },

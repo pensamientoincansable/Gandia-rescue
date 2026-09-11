@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { AnimatedEntity } from './AnimatedEntity.js';
 import { loadModelsManifest } from './ModelLoader.js';
+import { assembleCharacter } from './CharacterSystem.js';
 
 /**
  * Lugareños y personajes 3D de Gandía (NPCs).
@@ -8,9 +9,11 @@ import { loadModelsManifest } from './ModelLoader.js';
  * para descubrir la historia, tradiciones y secretos del lugar, así como
  * recibir pistas de conservación sobre la fauna en peligro.
  *
- * Los humanos se cargan con un modelo 3D detallado (.glb) vía GLTFLoader y se
- * animan con un AnimationMixer (idle / walk / talk). Si el modelo no está
- * disponible, se usa el monigote de primitivas como respaldo.
+ * Cada NPC tiene un `look` predeterminado del pack `media/Fantasy Character`
+ * (género, equipo aldeano/guardabosques, variante de color, hombreras y tono
+ * de piel), montado por `CharacterSystem`. Si el pack no está disponible se
+ * prueba el humano genérico del manifiesto (`npc.glb`) y, en última instancia,
+ * el monigote de primitivas como respaldo.
  */
 
 export const NPCS_DATA = {
@@ -21,6 +24,7 @@ export const NPCS_DATA = {
     coords: { x: 26, z: 12 },
     icon: '🛟',
     outfit: { shirt: 0xe63946, pants: 0xf4f1de, hat: 0xe63946 },
+    look: { gender: 'male', outfit: 'peasant', variant: 1, pauldrons: false, skin: 'medium' },
     topics: ['historia_playa', 'tortugas_dunas', 'pista_erizo'],
   },
   port: {
@@ -30,6 +34,7 @@ export const NPCS_DATA = {
     coords: { x: 20, z: -35 },
     icon: '⚓',
     outfit: { shirt: 0x1d3557, pants: 0x457b9d, hat: 0x2b2d42 },
+    look: { gender: 'male', outfit: 'peasant', variant: 2, pauldrons: false, skin: 'dark' },
     topics: ['historia_grau', 'lonja_pesca', 'pista_gaviota'],
   },
   marjal: {
@@ -39,6 +44,7 @@ export const NPCS_DATA = {
     coords: { x: -35, z: 15 },
     icon: '🌾',
     outfit: { shirt: 0x588157, pants: 0x3a5a40, hat: 0xd4a373 },
+    look: { gender: 'male', outfit: 'peasant', variant: 1, pauldrons: false, skin: 'dark' },
     topics: ['historia_ullals', 'arroz_safor', 'pista_jabali'],
   },
   riu: {
@@ -48,6 +54,7 @@ export const NPCS_DATA = {
     coords: { x: -20, z: -15 },
     icon: '🔬',
     outfit: { shirt: 0xa3b18a, pants: 0x344e41, hat: 0x588157 },
+    look: { gender: 'female', outfit: 'ranger', variant: 1, pauldrons: false, skin: 'light' },
     topics: ['historia_serpis', 'corredor_fluvial', 'pista_conejo'],
   },
   casc: {
@@ -57,6 +64,7 @@ export const NPCS_DATA = {
     coords: { x: -16, z: -8 },
     icon: '📜',
     outfit: { shirt: 0x4a4e69, pants: 0x22223b, hat: 0x9a8c98 },
+    look: { gender: 'male', outfit: 'ranger', variant: 2, pauldrons: true, skin: 'light' },
     topics: ['historia_borja', 'colegiata_palau', 'pista_gato'],
   },
   montduver: {
@@ -66,6 +74,7 @@ export const NPCS_DATA = {
     coords: { x: -10, z: -12 },
     icon: '🌲',
     outfit: { shirt: 0x2d6a4f, pants: 0x1b4332, hat: 0x40916c },
+    look: { gender: 'female', outfit: 'ranger', variant: 2, pauldrons: true, skin: 'medium' },
     topics: ['historia_montduver', 'rapaces_nocturnas', 'pista_mochuelo'],
   },
 };
@@ -122,9 +131,18 @@ export class NPCs3D {
     this._loadNpcModel(this.activeNpc);
   }
 
-  /** Carga el modelo GLTF del humano con sus animaciones (no bloqueante). */
+  /** Carga el modelo del lugareño: pack de personajes → npc.glb → monigote. */
   async _loadNpcModel(npc) {
     try {
+      // 1. Aspecto predeterminado del pack de personajes subido al repo.
+      if (npc.data?.look) {
+        const assembled = await assembleCharacter(npc.data.look);
+        if (assembled) {
+          await npc.character.attachModelObject(assembled.group, assembled.source);
+          return;
+        }
+      }
+      // 2. Humano genérico del manifiesto (npc.glb) si el pack no está.
       const manifest = await loadModelsManifest();
       const cfg = manifest?.npc;
       if (!cfg?.path) return;

@@ -172,6 +172,19 @@ export class AnimatedEntity {
     this._applyMotion(name);
   }
 
+  /**
+   * Acopla un Object3D ya montado (p. ej. un personaje modular de
+   * `CharacterSystem`) como si fuera un modelo cargado. El objeto se ajusta
+   * con `fit` si la entidad lo tiene configurado.
+   * @param {THREE.Object3D} object
+   * @param {string} [source] Etiqueta de diagnóstico del asset.
+   */
+  attachModelObject(object, source = 'custom') {
+    if (!object) return { loaded: false, path: null, animated: false };
+    this._attachModel({ scene: object, animations: [] }, this.animations, this.fit, source);
+    return { loaded: true, path: source, animated: false };
+  }
+
   _applyMotion(name) {
     this.model?.playMotion(name);
   }
