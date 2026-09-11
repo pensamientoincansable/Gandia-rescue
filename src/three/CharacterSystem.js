@@ -29,13 +29,21 @@ const storage = {
  * animación, el movimiento lo aporta la animación procedural de
  * `AnimatedEntity` (balanceo al andar, respiración en reposo…).
  *
- * Nota de skinning: las mallas cargadas usan `AttachedBindMode`, en el que el
- * resultado final no depende de la transformación propia de la malla (se
- * cancela con `bindMatrixInverse`), sino sólo de la pose de los huesos. Por
- * eso las mallas de otras piezas pueden colgarse de cualquier nodo: basta con
- * apuntar su `skeleton` al esqueleto compartido. El esqueleto compartido se
- * clona del grafo de la primera pieza (con su envoltorio Z-up→Y-up intacto),
- * así que la pose de enlace es exactamente la original.
+ * Nota de skinning (leer antes de tocar el montaje): GLTFLoader enlaza las
+ * mallas con `bindMatrix` = IDENTIDAD y `bindMode` "attached", de modo que en
+ * el vertex shader la transformación de la malla se cancela con
+ * `bindMatrixInverse` (= inversa de su matrixWorld) y la posición final de
+ * cada vértice depende SÓLO de `boneMatrixWorld · boneInverse`. Las
+ * `inverseBindMatrices` del GLB son por tanto la única referencia de espacio
+ * del asset: GLTFExporter las escribió como `boneInverses · bindMatrix` (con
+ * el envoltorio Z-up→Y-up incluido). Si el esqueleto compartido las
+ * recalcula (`new Skeleton(bones)` → `calculateInverses`), la malla pierde esa
+ * referencia y el personaje se dibuja con sus vértices "en bruto": tumbado en
+ * el suelo, en Z-up y mal escalado (el bug del modelo tumbado). Por eso el
+ * esqueleto compartido SIEMPRE hereda las inverseBindMatrices del GLB base.
+ * Las mallas de otras piezas pueden colgarse de cualquier nodo (su
+ * transformación se cancela): basta con apuntar su `skeleton` al esqueleto
+ * compartido.
  *
  * Un "look" es un objeto plano y serializable:
  *   { gender: 'male'|'female', outfit: 'peasant'|'ranger',
@@ -215,6 +223,11 @@ function applyLookToMaterial(material, materialName, look, manifest) {
         material.metalness = 1;
       }
       if (entry.slot === 'aoMap') material.aoMapIntensity = 1;
+      // El mapa de color ya trae el color real del tejido: se retira el tinte
+      // de respaldo para no oscurecerlo (el tinte sólo debe verse si la
+      // textura NO llega). La piel conserva su multiplicador de tono porque
+      // su atlas base es deliberadamente oscuro.
+      if (entry.slot === 'map' && !isSkin) material.color.set(0xffffff);
       material.needsUpdate = true;
     });
   }
@@ -277,14 +290,28 @@ export async function assembleCharacter(look) {
   // 1. Base: clonar la primera pieza y crear un esqueleto FRESCO con sus
   //    huesos clonados (el grafo conserva el envoltorio Z-up→Y-up del GLB, de
   //    modo que la pose de enlace es exactamente la original).
+  //    CRÍTICO: el esqueleto compartido hereda las INVERSE BIND MATRICES del
+  //    GLB (la verdadera pose de enlace del asset). No se deben recalcular:
+  //    con `bindMatrix` identidad (GLTFLoader) son la única referencia de
+  //    espacio que mantiene el personaje en pie; recalculándolas el render
+  //    dibuja los vértices en crudo Z-up (modelo tumbado en el suelo).
   const base = usable[0];
   const baseScene = base.gltf.scene.clone(true);
   baseScene.updateMatrixWorld(true, true);
-  const sourceOrder = firstSkinnedMesh(base.gltf.scene).skeleton.bones.map((bone) => bone.name);
+  const baseSkin = firstSkinnedMesh(base.gltf.scene);
+  const sourceOrder = baseSkin.skeleton.bones.map((bone) => bone.name);
+  const sourceInverses = baseSkin.skeleton.boneInverses;
   const orderedBones = clonedBonesInOrder(baseScene, sourceOrder);
   if (orderedBones.length < sourceOrder.length) return null;
 
-  const skeleton = new THREE.Skeleton(orderedBones);
+  // ibm del GLB reordenadas a los huesos clonados (mismo orden por nombre);
+  // si alguna faltara, se recalcula sólo ésa a partir de la pose actual.
+  const boneInverses = orderedBones.map((bone, i) => (
+    sourceInverses[i]
+      ? sourceInverses[i].clone()
+      : new THREE.Matrix4().copy(bone.matrixWorld).invert()
+  ));
+  const skeleton = new THREE.Skeleton(orderedBones, boneInverses);
   const boneIndexByName = new Map(orderedBones.map((bone, i) => [bone.name, i]));
 
   const group = new THREE.Group();
@@ -353,6 +380,12 @@ export async function assembleCharacter(look) {
   // 4. Normalizar al tamaño del juego (1.85 m, pies en el suelo, centrado).
   const fit = manifest.fit ?? { height: 1.85, center: true, ground: 0 };
   const holder = createFittedHolder(group, fit);
+
+  // 5. Refrescar la jerarquía final: en "attached" la bindMatrixInverse de
+  //    cada malla se actualiza aquí igual que hace el renderizador del
+  //    navegador antes de dibujar. Así cualquier medición posterior (cajas,
+  //    pruebas, colisiones) coincide EXACTAMENTE con lo que se ve en pantalla.
+  holder.pivot.updateMatrixWorld(true);
 
   return {
     group: holder.pivot,
