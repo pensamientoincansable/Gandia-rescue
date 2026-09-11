@@ -4,10 +4,14 @@
  *     sus rutas (glb y texturas) existen en `public/`;
  *  2. `assembleCharacter` monta personajes completos en Node (GLTFLoader real
  *     vía fetch): altura ~1.85 m, un único esqueleto de 65 huesos compartido
- *     por todas las mallas y materiales nombrados del pack;
+ *     por todas las mallas, materiales nombrados del pack SIN emissive (el
+ *     blanco del FBX vela el color), brazos relajados (la pose del FBX es
+ *     en T) y cabeza de repuesto para el aldeano (el pack no trae otra);
  *  3. las variantes y los tonos de piel se reflejan en los materiales;
- *  4. el look del guardián se persiste en localStorage;
- *  5. los 6 NPC tienen aspecto predeterminado válido del pack.
+ *  4. el rig procedural balancea piernas adelante/atrás (sin desviarse de
+ *     lado), los brazos en contrafase, y los codos/tobillos acompañan;
+ *  5. el look del guardián se persiste en localStorage;
+ *  6. los 6 NPC tienen aspecto predeterminado válido del pack.
  *
  * Ejecutar: node scripts/character-test.mjs
  */
@@ -52,6 +56,15 @@ const expect = (condition, label) => {
   if (!condition) failures += 1;
 };
 const near = (value, target, tolerance = 0.02) => Math.abs(value - target) <= tolerance;
+/** Materiales con emissive distinto de negro (el bug del "modelo blanco"). */
+const emissiveOffenders = (assembled) => {
+  const bad = [];
+  assembled.meshes.forEach((m) => {
+    const list = Array.isArray(m.material) ? m.material : [m.material];
+    list.forEach((mat) => { if (mat.emissive && mat.emissive.getHex() !== 0) bad.push(mat.name); });
+  });
+  return [...new Set(bad)];
+};
 
 console.log('· Manifiesto de personajes (config/characters.json)');
 const manifest = await loadCharactersManifest();
@@ -107,12 +120,23 @@ console.log('· Montaje de personajes (GLTFLoader real sobre HTTP local)');
     expect(near(size.y, 1.85, 0.03), `altura normalizada a 1.85 m (${size.y.toFixed(2)})`);
     expect(near(box.min.y, 0, 0.03), `pies en el suelo (y = 0, ${box.min.y.toFixed(3)})`);
     // Un personaje DE PIE es alto y delgado en profundidad. La losa tumbada
-    // del bug medía x≈8 / z≈8.8 con y=1.85 (su "alto" era el grosor).
-    expect(size.z < 0.8 && size.x < 2.6, `de pie y delgado (x=${size.x.toFixed(2)}, z=${size.z.toFixed(2)})`);
+    // del bug medía x≈8 / z≈8.8 con y=1.85 (su "alto" era el grosor), y la
+    // pose en T sin relajar ensancha a x≈1.7-2.1.
+    expect(size.z < 0.8 && size.x < 1.1, `de pie, delgado y sin pose en T (x=${size.x.toFixed(2)}, z=${size.z.toFixed(2)})`);
     const headY = assembled.skeleton.getBoneByName('Head').getWorldPosition(new THREE.Vector3()).y;
     const pelvisY = assembled.skeleton.getBoneByName('pelvis').getWorldPosition(new THREE.Vector3()).y;
     expect(headY > 1.2 && headY < 2.1, `cabeza arriba tras el ajuste (y=${headY.toFixed(2)})`);
     expect(pelvisY > 0.7 && pelvisY < 1.3, `pelvis a media altura (y=${pelvisY.toFixed(2)})`);
+    // Brazos relajados: las manos cuelgan por debajo de los hombros y cerca
+    // del costado (en T quedarían a |x|≈0.85, a la altura del hombro).
+    const handL = assembled.skeleton.getBoneByName('hand_l').getWorldPosition(new THREE.Vector3());
+    const shoulderL = assembled.skeleton.getBoneByName('upperarm_l').getWorldPosition(new THREE.Vector3());
+    expect(
+      Math.abs(handL.x) < 0.5 && handL.y < shoulderL.y - 0.2,
+      `brazos colgando (mano x=${handL.x.toFixed(2)}, y=${handL.y.toFixed(2)})`,
+    );
+    // Sin emissive: el FBX trae emissive blanco y vela al personaje.
+    expect(emissiveOffenders(assembled).length === 0, 'materiales sin emissive (no velado blanco)');
     const names = new Set();
     assembled.meshes.forEach((m) => {
       const list = Array.isArray(m.material) ? m.material : [m.material];
@@ -134,8 +158,14 @@ console.log('· Montaje masculino también en pie (inverseBindMatrices por géne
     const box = new THREE.Box3().setFromObject(assembled.group, true);
     const size = box.getSize(new THREE.Vector3());
     expect(near(size.y, 1.85, 0.03), `masculino: altura 1.85 m (${size.y.toFixed(2)})`);
-    expect(size.z < 0.8 && size.x < 2.6, `masculino: de pie y delgado (x=${size.x.toFixed(2)}, z=${size.z.toFixed(2)})`);
+    expect(size.z < 0.8 && size.x < 1.1, `masculino: de pie, delgado y sin pose en T (x=${size.x.toFixed(2)}, z=${size.z.toFixed(2)})`);
     expect(near(box.min.y, 0, 0.03), 'masculino: pies en el suelo');
+    // El pack no trae cabeza de aldeano: se reutiliza la capucha ranger.
+    expect(
+      assembled.meshes.some((m) => /head|hood/i.test(m.name)),
+      `aldeano con cabeza (${assembled.meshes.map((m) => m.name).join(', ')})`,
+    );
+    expect(emissiveOffenders(assembled).length === 0, 'masculino: materiales sin emissive');
   }
 }
 
@@ -149,22 +179,77 @@ console.log('· Animación procedural del rig (sin clips en el pack)');
   entity.attachModelObject(assembled.group, assembled.source);
   scene.updateMatrixWorld(true);
   expect(!!entity._rig, 'captura el rig del pack (brazos/piernas/columna)');
+  expect(
+    (entity._rig?.groups.forearms.length ?? 0) === 2 && (entity._rig?.groups.feet.length ?? 0) === 2,
+    'el rig incluye codos y tobillos',
+  );
   if (entity._rig) {
     const foot = assembled.skeleton.getBoneByName('foot_l');
     const hand = assembled.skeleton.getBoneByName('hand_r');
+    const handL = assembled.skeleton.getBoneByName('hand_l');
     const restZ = foot.getWorldPosition(new THREE.Vector3()).z;
     const restHandZ = hand.getWorldPosition(new THREE.Vector3()).z;
     entity.setMotion('walk');
     let swing = 0;
     let handSwing = 0;
+    // Series del ciclo (mismo lado) para simetría y contrafase. Se miden
+    // sobre la media de la ventana: el balanceo del torso añade un deriva
+    // común que no debe sesgar el signo.
+    const footDz = [];
+    const handDz = [];
+    let footDx = 0;
     for (let i = 0; i < 240; i += 1) {
       entity.update(1 / 60, i / 60);
       scene.updateMatrixWorld(true);
-      swing = Math.max(swing, Math.abs(foot.getWorldPosition(new THREE.Vector3()).z - restZ));
-      handSwing = Math.max(handSwing, Math.abs(hand.getWorldPosition(new THREE.Vector3()).z - restHandZ));
+      const fz = foot.getWorldPosition(new THREE.Vector3()).z - restZ;
+      const hz = hand.getWorldPosition(new THREE.Vector3()).z - restHandZ;
+      swing = Math.max(swing, Math.abs(fz));
+      handSwing = Math.max(handSwing, Math.abs(hz));
+      if (i >= 30) { // transitorio de entrar al paso ya asentado
+        footDz.push(fz);
+        handDz.push(handL.getWorldPosition(new THREE.Vector3()).z);
+      }
+    }
+    // Segundo ciclo para la desviación lateral (desde el reposo asentado).
+    entity.setMotion('idle');
+    for (let i = 0; i < 30; i += 1) entity.update(1 / 60, i / 60);
+    scene.updateMatrixWorld(true);
+    const restX = foot.getWorldPosition(new THREE.Vector3()).x;
+    entity.setMotion('walk');
+    for (let i = 0; i < 240; i += 1) {
+      entity.update(1 / 60, i / 60);
+      scene.updateMatrixWorld(true);
+      if (i >= 30) footDx = Math.max(footDx, Math.abs(foot.getWorldPosition(new THREE.Vector3()).x - restX));
     }
     expect(swing > 0.15, `al caminar las piernas se balancean (${swing.toFixed(2)} m)`);
     expect(handSwing > 0.05, `al caminar los brazos se balancean (${handSwing.toFixed(2)} m)`);
+    // Simetría: el pie va tanto adelante como atrás del reposo…
+    const mean = (list) => list.reduce((a, b) => a + b, 0) / Math.max(1, list.length);
+    const fMean = mean(footDz);
+    const fwd = Math.max(...footDz) - fMean;
+    const bwd = fMean - Math.min(...footDz);
+    expect(fwd > 0.1 && bwd > 0.1, `la zancada es simétrica (adelante ${fwd.toFixed(2)}, atrás ${bwd.toFixed(2)})`);
+    // …y no se desvía de lado (el bug componía el giro en el eje del reposo).
+    expect(footDx < 0.15, `el pie no se desvía de lado (${footDx.toFixed(3)} m)`);
+    // Contrafase: el brazo izquierdo va al contrario que el pie izquierdo.
+    const hMean = mean(handDz);
+    let against = 0;
+    let total = 0;
+    for (let i = 0; i < footDz.length; i += 1) {
+      const f = footDz[i] - fMean;
+      const h = handDz[i] - hMean;
+      if (Math.abs(f) < 0.03 || Math.abs(h) < 0.015) continue; // pasos por cero
+      total += 1;
+      if (Math.sign(f) !== Math.sign(h)) against += 1;
+    }
+    expect(total > 40 && against / total > 0.65, `brazos en contrafase (${against}/${total} muestras)`);
+    // Salto: los brazos se elevan hacia delante-arriba.
+    const restHandY = handL.getWorldPosition(new THREE.Vector3()).y;
+    entity.setMotion('jump');
+    for (let i = 0; i < 60; i += 1) entity.update(1 / 60, i / 60);
+    scene.updateMatrixWorld(true);
+    const jumpHandY = handL.getWorldPosition(new THREE.Vector3()).y;
+    expect(jumpHandY > restHandY + 0.15, `al saltar los brazos se elevan (+${(jumpHandY - restHandY).toFixed(2)} m)`);
     entity.setMotion('idle');
     for (let i = 0; i < 30; i += 1) entity.update(1 / 60, i / 60);
     scene.updateMatrixWorld(true);
