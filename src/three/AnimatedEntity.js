@@ -97,6 +97,10 @@ function footAngleFor(thighAngle, kneeAngle, cfg) {
 const _swingAxis = /*@__PURE__*/ new THREE.Vector3();
 const _parentQuat = /*@__PURE__*/ new THREE.Quaternion();
 const _swingQuat = /*@__PURE__*/ new THREE.Quaternion();
+const _rootQuat = /*@__PURE__*/ new THREE.Quaternion();
+/* Ejes del PERSONAJE en el mundo (izquierda-derecha y frente-atrás), frescos por frame. */
+const _charAxisX = /*@__PURE__*/ new THREE.Vector3(1, 0, 0);
+const _charAxisZ = /*@__PURE__*/ new THREE.Vector3(0, 0, 1);
 
 export class AnimatedEntity {
   constructor({
@@ -297,12 +301,14 @@ export class AnimatedEntity {
   /**
    * Localiza los nodos que hay que rotar para animar cada grupo del rig.
    *
-   * El pack de personajes llega con cada hueso como HOJA colgada de un
-   * contenedor identidad (`bone → X_2 → X_1`): la cadena cinemática vive en
-   * los nodos `X_1` (con rotación/posición reales), así que el nodo a rotar
-   * es `bone.parent.parent`. En rigs clásicos (huesos encadenados
-   * directamente) el nodo a rotar es el propio hueso. Se distingue
-   * comprobando si el hueso tiene huesos hijos.
+   * El pack de personajes llega con cada hueso como HOJA colgada de sus
+   * contenedores (`X_1`, a veces con un `X_2` intermedio: el anidado varía
+   * según la pieza base): la cadena cinemática vive en los nodos `X_1`, así
+   * que el nodo a rotar es el ancestro `X_1` más alto del propio hueso. Subir
+   * un número fijo de niveles (`parent.parent`) animaba al PADRE en las
+   * bases planas (la pelvis en vez del muslo: ambas piernas se movían
+   * juntas). En rigs clásicos (huesos encadenados directamente, como los
+   * aldeanos) el nodo a rotar es el propio hueso.
    * @param {THREE.Object3D} content Raíz del modelo adjunto.
    */
   _captureRig(content) {
@@ -317,10 +323,13 @@ export class AnimatedEntity {
     const rotNodeFor = (name) => {
       const bone = byName.get(name);
       if (!bone) return null;
-      const hasBoneChildren = bone.children.some((child) => child.isBone);
-      if (hasBoneChildren) return bone;                       // rig clásico
-      const container = bone.parent?.parent ?? bone.parent;   // patrón X_2/X_1
-      return container ?? null;
+      // Se sube por los contenedores del propio hueso (`X_1`/`X_2`) hasta el
+      // más alto; si no hay (rig clásico), se rota el hueso.
+      let node = bone;
+      while (node.parent && (node.parent.name === `${name}_1` || node.parent.name === `${name}_2`)) {
+        node = node.parent;
+      }
+      return node;
     };
 
     const groups = {};
@@ -355,14 +364,28 @@ export class AnimatedEntity {
     const cfg = RIG_MOTIONS[this.motion] ?? RIG_MOTIONS.idle;
     const t = this._phase;
 
+    // Ejes del PERSONAJE en el mundo (no ejes fijos del mundo): el balanceo
+    // debe seguir al heading — con ejes fijos, al girar 90° las piernas se
+    // levantarían de lado en vez de avanzar. Se calculan una vez por frame
+    // (`getWorldQuaternion` refresca la cadena él solo).
+    this.root.getWorldQuaternion(_rootQuat);
+    _charAxisX.set(1, 0, 0).applyQuaternion(_rootQuat);
+    _charAxisZ.set(0, 0, 1).applyQuaternion(_rootQuat);
+
     // Ciclo de zancada: swing > 0 ⇒ pierna izquierda adelantada.
-    const swing = cfg.stepFreq ? Math.sin(t * cfg.stepFreq * Math.PI * 2) : 0;
+    const cycle = t * (cfg.stepFreq || 0) * Math.PI * 2;
+    const swing = cfg.stepFreq ? Math.sin(cycle) : 0;
+    // Velocidad del ciclo: > 0 mientras la pierna izquierda AVANZA por el
+    // aire (es la derivada de su ángulo con el signo cambiado).
+    const swingVel = cfg.stepFreq ? Math.cos(cycle) : 0;
     const legL = cfg.tuck ? -cfg.legSwing : -cfg.legSwing * swing;
     const legR = cfg.tuck ? -cfg.legSwing : cfg.legSwing * swing;
     // La rodilla sólo se dobla en un sentido (nunca se hiperextiende): se
-    // flexiona al llevar la pierna hacia atrás, la de apoyo queda recta.
-    const kneeL = cfg.tuck ? cfg.kneeBend : cfg.kneeBend * Math.max(0, -swing);
-    const kneeR = cfg.tuck ? cfg.kneeBend : cfg.kneeBend * Math.max(0, swing);
+    // flexiona al adelantar la pierna en el aire y se extiende al apoyar.
+    // Con el pico en la pierna de atrás (en apoyo) la marcha parecía
+    // agarrotada y robótica.
+    const kneeL = cfg.tuck ? cfg.kneeBend : cfg.kneeBend * Math.max(0, swingVel);
+    const kneeR = cfg.tuck ? cfg.kneeBend : cfg.kneeBend * Math.max(0, -swingVel);
     // Brazos en CONTRAFASE con la pierna del mismo lado: al adelantar la
     // pierna izquierda, el brazo izquierdo va hacia atrás (y viceversa).
     const armL = cfg.tuck ? -cfg.armSwing : cfg.armSwing * swing;
@@ -422,12 +445,12 @@ export class AnimatedEntity {
     _parentQuat.invert();
     node.quaternion.copy(rest);
     if (angleZ) {
-      _swingAxis.set(0, 0, 1).applyQuaternion(_parentQuat).normalize();
+      _swingAxis.copy(_charAxisZ).applyQuaternion(_parentQuat).normalize();
       _swingQuat.setFromAxisAngle(_swingAxis, angleZ);
       node.quaternion.premultiply(_swingQuat);
     }
     if (angleX) {
-      _swingAxis.set(1, 0, 0).applyQuaternion(_parentQuat).normalize();
+      _swingAxis.copy(_charAxisX).applyQuaternion(_parentQuat).normalize();
       _swingQuat.setFromAxisAngle(_swingAxis, angleX);
       node.quaternion.premultiply(_swingQuat);
     }

@@ -1,7 +1,7 @@
 import React from 'react';
 import {
   Zap, Volume2, Sun, Moon, Eye, Navigation, Shield, User, Camera, ArrowUp, ArrowDown, ArrowLeft, ArrowRight,
-  Radio, Disc,
+  Radio, Disc, ChevronsUp,
 } from 'lucide-react';
 
 /**
@@ -43,8 +43,23 @@ export default function VanControlsHUD({
     onVirtualInput?.({ [action]: false });
   };
 
+  // Todos los botones táctiles comparten gestos: pulsar/soltar con dedo o
+  // ratón, más cancelación (el dedo se sale del botón, una llamada
+  // interrumpe…) para no dejar acciones “enganchadas”, y bloqueo del menú
+  // contextual de la pulsación larga en móvil.
+  const touchProps = (action, label) => ({
+    onTouchStart: handleTouchStart(action),
+    onTouchEnd: handleTouchEnd(action),
+    onTouchCancel: handleTouchEnd(action),
+    onMouseDown: handleTouchStart(action),
+    onMouseUp: handleTouchEnd(action),
+    onMouseLeave: handleTouchEnd(action),
+    onContextMenu: (e) => e.preventDefault(),
+    'aria-label': label,
+  });
+
   return (
-    <div className="van-hud-container" pointerEvents="none">
+    <div className="van-hud-container">
       {/* Indicador de instrumentación digital (velocímetro + marchas) */}
       <div className="van-dashboard glass-panel">
         <div className="van-speed-gauge">
@@ -142,22 +157,14 @@ export default function VanControlsHUD({
           <button
             type="button"
             className="touch-btn touch-btn--steer"
-            onTouchStart={handleTouchStart('left')}
-            onTouchEnd={handleTouchEnd('left')}
-            onMouseDown={handleTouchStart('left')}
-            onMouseUp={handleTouchEnd('left')}
-            aria-label="Girar izquierda"
+            {...touchProps('left', 'Girar izquierda')}
           >
             <ArrowLeft size={22} />
           </button>
           <button
             type="button"
             className="touch-btn touch-btn--steer"
-            onTouchStart={handleTouchStart('right')}
-            onTouchEnd={handleTouchEnd('right')}
-            onMouseDown={handleTouchStart('right')}
-            onMouseUp={handleTouchEnd('right')}
-            aria-label="Girar derecha"
+            {...touchProps('right', 'Girar derecha')}
           >
             <ArrowRight size={22} />
           </button>
@@ -165,14 +172,21 @@ export default function VanControlsHUD({
 
         {/* Pedales de aceleración y freno derechos */}
         <div className="touch-pedals-right">
+          {isFootMode && (
+            <button
+              type="button"
+              className="touch-btn touch-btn--jump"
+              {...touchProps('jump', 'Saltar')}
+            >
+              <ChevronsUp size={22} />
+              <small>Salto</small>
+            </button>
+          )}
+
           <button
             type="button"
             className="touch-btn touch-btn--brake"
-            onTouchStart={handleTouchStart('backward')}
-            onTouchEnd={handleTouchEnd('backward')}
-            onMouseDown={handleTouchStart('backward')}
-            onMouseUp={handleTouchEnd('backward')}
-            aria-label="Frenar / Marcha atrás"
+            {...touchProps('backward', 'Frenar / Marcha atrás')}
           >
             <ArrowDown size={22} />
             <small>Freno</small>
@@ -181,11 +195,7 @@ export default function VanControlsHUD({
           <button
             type="button"
             className="touch-btn touch-btn--gas"
-            onTouchStart={handleTouchStart('forward')}
-            onTouchEnd={handleTouchEnd('forward')}
-            onMouseDown={handleTouchStart('forward')}
-            onMouseUp={handleTouchEnd('forward')}
-            aria-label="Acelerar"
+            {...touchProps('forward', 'Acelerar')}
           >
             <ArrowUp size={24} />
             <small>Gas</small>

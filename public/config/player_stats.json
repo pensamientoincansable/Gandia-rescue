@@ -41,7 +41,7 @@
   "ranger": {
     "walkSpeed": 4.5,
     "sprintSpeed": 8,
-    "turnSpeed": 2.8,
+    "turnSpeed": 2.4,
     "acceleration": 22,
     "friction": 12,
     "jumpForce": 6.2,

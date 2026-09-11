@@ -32,8 +32,14 @@ click(footBtn); await sleep(200);
 const after = [...$$('.van-tool-btn')].find(b=>/pie|van/i.test(b.textContent));
 expect(/subir a van/i.test(after.textContent), `al pulsar pasa a modo a pie ("${after.textContent.trim()}")`);
 expect(!!$('.van-chip.is-foot'), 'el HUD indica el estado A PIE');
+expect(!!$('.touch-btn--jump'), 'a pie aparece el botón táctil de salto');
+const jump = $('.touch-btn--jump');
+jump.dispatchEvent(new window.MouseEvent('mousedown',{bubbles:true})); await sleep(120);
+jump.dispatchEvent(new window.MouseEvent('mouseup',{bubbles:true}));
+expect(true, 'el botón de salto acepta pulsación sin errores');
 click(after); await sleep(200);
 expect(/bajar a pie/i.test([...$$('.van-tool-btn')].find(b=>/pie|van/i.test(b.textContent)).textContent), 'vuelve a subir a la furgoneta');
+expect(!$('.touch-btn--jump'), 'en la furgoneta no hay botón de salto');
 
 const camBtn = [...$$('.van-tool-btn')].find(b=>/persona|cabina|cenital/i.test(b.textContent));
 const camLabel = camBtn.textContent.trim();
@@ -51,6 +57,17 @@ const gas = $('.touch-btn--gas');
 gas.dispatchEvent(new window.MouseEvent('mousedown',{bubbles:true})); await sleep(120);
 gas.dispatchEvent(new window.MouseEvent('mouseup',{bubbles:true}));
 expect(true, 'el pedal de gas acepta pulsación sin errores');
+
+console.log('· Cajón de misiones');
+const fab = $('.missions-fab');
+expect(!!fab, 'botón flotante de misiones presente');
+const panel = $('.explore-map-panel');
+const pendingRows = $$('.explore-map-panel .mission-row:not(.is-done)').length;
+click(fab); await sleep(150);
+expect(!panel.classList.contains('is-open'), 'el FAB pliega el cajón de misiones');
+expect(($$('.missions-fab__badge').length > 0) === (pendingRows > 0), `plegado muestra el contador si hay avisos (${pendingRows} pendientes)`);
+click(fab); await sleep(150);
+expect(panel.classList.contains('is-open'), 'el FAB despliega el cajón de misiones');
 
 console.log(fails?`\n✗ ${fails} fallos`:'\n✓ Controles de UI verificados');
 process.exit(fails?1:0);

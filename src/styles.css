@@ -1998,3 +1998,90 @@ kbd { min-width: 18px; height: 18px; display: grid; place-items: center; border:
   .char-topbar { flex-wrap: wrap; }
   .char-topbar__badge { display: none; }
 }
+
+/* ---------- Cajón lateral de misiones en móvil ---------- */
+/* En escritorio el botón flotante y el velo no existen; los paneles son fijos. */
+.missions-fab, .missions-scrim { display: none; }
+
+@media (max-width: 760px) {
+  /* Los paneles de radar/misiones dejan de ser hoja inferior (tapaba los
+     botones táctiles y en ≤420px el de rescate ni se veía) y pasan a ser un
+     cajón lateral plegable desde el borde derecho. */
+  .rescue-map-panel, .explore-map-panel {
+    display: block;
+    top: calc(64px + env(safe-area-inset-top));
+    bottom: 0;
+    left: auto;
+    right: 0;
+    width: min(300px, 84vw);
+    max-height: none;
+    border-radius: 16px 0 0 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+    transform: translateX(105%);
+    transition: transform .28s ease;
+    z-index: 8;
+  }
+  .rescue-map-panel.is-open, .explore-map-panel.is-open { transform: none; }
+  /* Con 300px de cajón vuelve a caber la cabecera del panel. */
+  .rescue-map-panel .map-panel-head { display: flex; }
+  /* Velo para cerrar tocando fuera (por encima del HUD, bajo el cajón). */
+  .missions-scrim {
+    display: block;
+    position: absolute;
+    inset: 0;
+    z-index: 7;
+    background: rgba(2, 7, 5, .45);
+  }
+  /* Botón flotante en el borde derecho, bajo la brújula. */
+  .missions-fab {
+    display: grid;
+    place-items: center;
+    position: absolute;
+    z-index: 9;
+    right: 12px;
+    top: calc(150px + env(safe-area-inset-top));
+    width: 48px;
+    height: 48px;
+    border-radius: 50%;
+    border: 1.5px solid rgba(255, 255, 255, .22);
+    background: rgba(10, 24, 19, .85);
+    backdrop-filter: blur(14px);
+    color: #ffd9a1;
+    cursor: pointer;
+    box-shadow: 0 10px 25px rgba(0, 0, 0, .4);
+    touch-action: manipulation;
+  }
+  .missions-fab:active { transform: scale(.92); }
+  .missions-fab__badge {
+    position: absolute;
+    top: -4px;
+    right: -4px;
+    min-width: 20px;
+    height: 20px;
+    padding: 0 5px;
+    display: grid;
+    place-items: center;
+    border-radius: 999px;
+    background: var(--orange);
+    color: #fff;
+    font-size: 10px;
+    font-style: normal;
+    font-weight: 800;
+  }
+  /* La tarjeta de aviso baja tras el velocímetro (antes se solapaban). */
+  .case-card { top: calc(172px + env(safe-area-inset-top)); }
+  /* El aviso de interacción sube sobre los pedales (antes quedaba debajo). */
+  .interaction-prompt { bottom: calc(170px + var(--safe-bottom)); }
+}
+
+@media (max-width: 900px), (pointer: coarse) {
+  /* Salto a pie: ámbar para distinguirlo de gas (verde) y freno (rojo). */
+  .touch-btn--jump {
+    background: linear-gradient(145deg, rgba(255, 200, 87, .55), rgba(200, 130, 20, .6));
+    border-color: #ffc857;
+    width: 60px;
+    height: 60px;
+  }
+}

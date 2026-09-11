@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import {
   ArrowLeft, Bell, ChevronDown, ExternalLink, FileWarning, HeartPulse, Info,
-  MapPin, Navigation, PawPrint, Radio, UtensilsCrossed, Zap, Eye, Sun, Volume2, Camera,
+  MapPin, Navigation, PawPrint, Radio, UtensilsCrossed, Zap, Eye, Sun, Volume2, Camera, X,
 } from 'lucide-react';
 import GandiaWorld3D from '../three/GandiaWorld3D.jsx';
 import Panorama360 from '../components/Panorama360.jsx';
@@ -42,6 +42,9 @@ export default function RescueMode({
   const [success, setSuccess] = useState(null);
   const [levelUp, setLevelUp] = useState(null);
   const [showMissions, setShowMissions] = useState(!isMobile);
+  // Cajón lateral de radar/misiones en móvil (plegado por defecto para no
+  // tapar los controles táctiles; en escritorio siempre visible).
+  const [mapOpen, setMapOpen] = useState(!isMobile);
   const [noGpsDismissed, setNoGpsDismissed] = useState(false);
 
   // Estados de la Furgoneta de Rescate
@@ -83,6 +86,7 @@ export default function RescueMode({
   }, [zone.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const selectedCase = caseById(selectedCaseId) ?? CASES[0];
+  const pendingCases = CASES.filter((c) => (save.cases[c.id] ?? 0) === 0).length;
   const caseDistance = useMemo(
     () => (geo.position ? distanceM(geo.position, caseCoords(selectedCase)) : null),
     [geo.position, selectedCase],
@@ -316,8 +320,8 @@ export default function RescueMode({
         </div>
       </section>
 
-      {/* 4. PANEL DE RADAR 3D Y ZONAS */}
-      <aside className="rescue-map-panel glass-panel">
+      {/* 4. PANEL DE RADAR 3D Y ZONAS (en móvil es un cajón plegable) */}
+      <aside className={`rescue-map-panel glass-panel ${mapOpen ? 'is-open' : ''}`}>
         <div className="map-panel-head">
           <div><span>{t('radarTitle')}</span><strong>{zoneName}</strong></div>
           <span className={`map-gps-chip ${hasGps ? 'is-on' : ''}`}>{hasGps ? <Navigation size={13} /> : <Zap size={13} />}</span>
@@ -353,6 +357,23 @@ export default function RescueMode({
           bonusNote={!save.photoXpZones.includes(zone.id) ? t('firstPhotoXp') : null}
         />
       </aside>
+
+      {/* Botón flotante de misiones (sólo móvil: abre el cajón lateral) */}
+      <button
+        type="button"
+        className={`missions-fab ${mapOpen ? 'is-open' : ''}`}
+        onClick={() => setMapOpen((v) => !v)}
+        aria-label={t('missions')}
+        aria-expanded={mapOpen}
+      >
+        {mapOpen ? <X size={20} /> : <Bell size={20} />}
+        {!mapOpen && pendingCases > 0 && (
+          <i className="missions-fab__badge">{pendingCases}</i>
+        )}
+      </button>
+      {mapOpen && (
+        <div className="missions-scrim" onClick={() => setMapOpen(false)} aria-hidden="true" />
+      )}
 
       {/* 5. PANEL DE CONTROL DE LA FURGONETA */}
       <VanControlsHUD
