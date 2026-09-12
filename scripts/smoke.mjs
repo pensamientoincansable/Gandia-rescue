@@ -72,9 +72,9 @@ console.log('· Personalización del guardián');
 click($('.player-customize'));
 await sleep(300);
 expect($('.char-screen'), 'pantalla de personalización cargada');
-expect($$('.char-option').length >= 9, 'opciones de aspecto disponibles');
-expect(window.document.body.textContent.includes('Hombreras') || window.document.body.textContent.includes('Muscleres') || window.document.body.textContent.includes('Pauldrons'),
-  'las hombreras aparecen con el atuendo guardabosques');
+expect($$('.char-option').length >= 12, 'opciones de aspecto disponibles (personajes + tonos)');
+expect(window.document.body.textContent.includes('Aventurero') || window.document.body.textContent.includes('Aventurer'),
+  'los personajes del pack media/glTF aparecen como opciones');
 click($$('.char-options--3 .char-option')[2]); // tono de piel claro
 await sleep(50);
 expect($('.char-stage__status .is-dirty'), 'la previsualización marca cambios sin guardar');
@@ -82,7 +82,7 @@ click($('.char-actions__save'));
 await sleep(300);
 expect($('.menu-screen'), 'al guardar se vuelve al menú');
 const guardianLook = JSON.parse(window.localStorage.getItem('gandia-guardian-look') ?? 'null');
-expect(guardianLook?.outfit === 'ranger' && guardianLook?.skin === 'light', 'el look del guardián queda persistido');
+expect(guardianLook?.character && guardianLook?.skin === 'light', 'el look del guardián queda persistido');
 
 console.log('· Modo rescate (geolocalización)');
 click($('.mode-card--rescue'));

@@ -281,8 +281,8 @@ export class RescueVan {
 
   /**
    * Carga el modelo 3D del personaje jugable.
-   *   1. Personaje modular del pack `media/Fantasy Character`, montado con el
-   *      look del guardián guardado en localStorage (o el de por defecto).
+   *   1. Personaje del pack `media/glTF` (11 personajes completos), montado con
+   *      el look del guardián guardado en localStorage (o el de por defecto).
    *   2. Si el pack no está disponible, la cadena del manifiesto
    *      (`models.json`, entrada `ranger`) con el ranger procedural de respaldo.
    *   3. Si nada carga, el monigote de primitivas.
@@ -296,11 +296,17 @@ export class RescueVan {
       const look = loadGuardianLook();
       const assembled = await assembleCharacter(look);
       if (assembled) {
-        this.rangerAvatar.attachModelObject(assembled.group, assembled.source);
+        this.rangerAvatar.attachModelObject(assembled.group, assembled.source, {
+          clips: assembled.clips,
+          animations: assembled.animations,
+        });
         this.rangerModelSource = assembled.source;
-        console.info(`[GandiaRescue] Guardián: ${assembled.source} (personaje modular del pack, animación procedural)`);
+        console.info(
+          `[GandiaRescue] Guardián: ${assembled.source} `
+          + `(personaje del pack media/glTF, ${assembled.clips?.length ? 'con animaciones reales' : 'animación procedural'})`,
+        );
         this._syncRangerAvatar();
-        return { loaded: true, path: assembled.source, animated: false };
+        return { loaded: true, path: assembled.source, animated: !!assembled.clips?.length };
       }
 
       // 2. Respaldo: copia local del manifiesto → ranger procedural del repo.
@@ -341,10 +347,13 @@ export class RescueVan {
     saveGuardianLook(look);
     const assembled = await assembleCharacter(look);
     if (!assembled) return this._applyRangerModel();
-    this.rangerAvatar.attachModelObject(assembled.group, assembled.source);
+    this.rangerAvatar.attachModelObject(assembled.group, assembled.source, {
+      clips: assembled.clips,
+      animations: assembled.animations,
+    });
     this.rangerModelSource = assembled.source;
     this._syncRangerAvatar();
-    return { loaded: true, path: assembled.source, animated: false };
+    return { loaded: true, path: assembled.source, animated: !!assembled.clips?.length };
   }
 
   /** Humanoid simple de primitivas usado si no hay modelo GLTF. */

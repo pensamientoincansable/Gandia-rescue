@@ -1,196 +1,73 @@
 {
-  "version": 1,
-  "description": "Manifiesto del sistema de personajes modulares (media/Fantasy Character). Cada pieza es un .glb esqueletado compatible con el resto de su género; los materiales se nombran por pieza (MI_Peasant, MI_Ranger, MI_Regular_*) y se visten en runtime con las texturas adaptadas de este mismo fichero.",
-  "parts": [
+  "version": 2,
+  "description": "Manifiesto del sistema de personajes (media/glTF). Cada personaje es un .glb esqueletado COMPLETO (cabeza real incluida) con sus 24 animaciones; los materiales de piel se tiñen en runtime con el tono elegido.",
+  "characters": [
     {
-      "id": "female_peasant_arms",
-      "gender": "female",
-      "outfit": "peasant",
-      "slot": "arms",
-      "glb": "models/characters/parts/Female_Peasant_Arms.glb"
+      "id": "Adventurer",
+      "glb": "models/characters/Adventurer.glb"
     },
     {
-      "id": "female_peasant_body",
-      "gender": "female",
-      "outfit": "peasant",
-      "slot": "body",
-      "glb": "models/characters/parts/Female_Peasant_Body.glb"
+      "id": "Beach",
+      "glb": "models/characters/Beach.glb"
     },
     {
-      "id": "female_peasant_feet",
-      "gender": "female",
-      "outfit": "peasant",
-      "slot": "feet",
-      "glb": "models/characters/parts/Female_Peasant_Feet.glb"
+      "id": "Casual_2",
+      "glb": "models/characters/Casual_2.glb"
     },
     {
-      "id": "female_peasant_legs",
-      "gender": "female",
-      "outfit": "peasant",
-      "slot": "legs",
-      "glb": "models/characters/parts/Female_Peasant_Legs.glb"
+      "id": "Casual_Hoodie",
+      "glb": "models/characters/Casual_Hoodie.glb"
     },
     {
-      "id": "female_ranger_acc_pauldrons",
-      "gender": "female",
-      "outfit": "ranger",
-      "slot": "acc",
-      "glb": "models/characters/parts/Female_Ranger_Acc_Pauldrons.glb"
+      "id": "Farmer",
+      "glb": "models/characters/Farmer.glb"
     },
     {
-      "id": "female_ranger_arms",
-      "gender": "female",
-      "outfit": "ranger",
-      "slot": "arms",
-      "glb": "models/characters/parts/Female_Ranger_Arms.glb"
+      "id": "King",
+      "glb": "models/characters/King.glb"
     },
     {
-      "id": "female_ranger_body",
-      "gender": "female",
-      "outfit": "ranger",
-      "slot": "body",
-      "glb": "models/characters/parts/Female_Ranger_Body.glb"
+      "id": "Punk",
+      "glb": "models/characters/Punk.glb"
     },
     {
-      "id": "female_ranger_feet",
-      "gender": "female",
-      "outfit": "ranger",
-      "slot": "feet",
-      "glb": "models/characters/parts/Female_Ranger_Feet.glb"
+      "id": "Spacesuit",
+      "glb": "models/characters/Spacesuit.glb"
     },
     {
-      "id": "female_ranger_head_hood",
-      "gender": "female",
-      "outfit": "ranger",
-      "slot": "head",
-      "glb": "models/characters/parts/Female_Ranger_Head_Hood.glb"
+      "id": "Suit",
+      "glb": "models/characters/Suit.glb"
     },
     {
-      "id": "female_ranger_legs",
-      "gender": "female",
-      "outfit": "ranger",
-      "slot": "legs",
-      "glb": "models/characters/parts/Female_Ranger_Legs.glb"
+      "id": "Swat",
+      "glb": "models/characters/Swat.glb"
     },
     {
-      "id": "male_peasant_arms",
-      "gender": "male",
-      "outfit": "peasant",
-      "slot": "arms",
-      "glb": "models/characters/parts/Male_Peasant_Arms.glb"
-    },
-    {
-      "id": "male_peasant_body",
-      "gender": "male",
-      "outfit": "peasant",
-      "slot": "body",
-      "glb": "models/characters/parts/Male_Peasant_Body.glb"
-    },
-    {
-      "id": "male_peasant_feet",
-      "gender": "male",
-      "outfit": "peasant",
-      "slot": "feet",
-      "glb": "models/characters/parts/Male_Peasant_Feet.glb"
-    },
-    {
-      "id": "male_peasant_legs",
-      "gender": "male",
-      "outfit": "peasant",
-      "slot": "legs",
-      "glb": "models/characters/parts/Male_Peasant_Legs.glb"
-    },
-    {
-      "id": "male_ranger_acc_pauldron",
-      "gender": "male",
-      "outfit": "ranger",
-      "slot": "acc",
-      "glb": "models/characters/parts/Male_Ranger_Acc_Pauldron.glb"
-    },
-    {
-      "id": "male_ranger_arms",
-      "gender": "male",
-      "outfit": "ranger",
-      "slot": "arms",
-      "glb": "models/characters/parts/Male_Ranger_Arms.glb"
-    },
-    {
-      "id": "male_ranger_body",
-      "gender": "male",
-      "outfit": "ranger",
-      "slot": "body",
-      "glb": "models/characters/parts/Male_Ranger_Body.glb"
-    },
-    {
-      "id": "male_ranger_feet_boots",
-      "gender": "male",
-      "outfit": "ranger",
-      "slot": "feet",
-      "glb": "models/characters/parts/Male_Ranger_Feet_Boots.glb"
-    },
-    {
-      "id": "male_ranger_head_hood",
-      "gender": "male",
-      "outfit": "ranger",
-      "slot": "head",
-      "glb": "models/characters/parts/Male_Ranger_Head_Hood.glb"
-    },
-    {
-      "id": "male_ranger_legs",
-      "gender": "male",
-      "outfit": "ranger",
-      "slot": "legs",
-      "glb": "models/characters/parts/Male_Ranger_Legs.glb"
+      "id": "Worker",
+      "glb": "models/characters/Worker.glb"
     }
   ],
-  "materials": {
-    "MI_Peasant": {
-      "variants": [
-        "models/characters/textures/peasant/T_Peasant_BaseColor.png",
-        "models/characters/textures/peasant/T_Peasant_2_BaseColor.png"
-      ],
-      "normal": "models/characters/textures/peasant/T_Peasant_Normal.png",
-      "orm": "models/characters/textures/peasant/T_Peasant_ORM.png",
-      "fallbackColor": "#8a6a45"
-    },
-    "MI_Ranger": {
-      "variants": [
-        "models/characters/textures/ranger/T_Ranger_BaseColor.png",
-        "models/characters/textures/ranger/T_Ranger_3_BaseColor.png"
-      ],
-      "normal": "models/characters/textures/ranger/T_Ranger_Normal.png",
-      "orm": "models/characters/textures/ranger/T_Ranger_ORM.png",
-      "fallbackColor": "#46543f"
-    },
-    "MI_Regular_Male": {
-      "map": "models/characters/textures/base/T_Regular_Male_Dark_BaseColor.png",
-      "normal": "models/characters/textures/base/T_Regular_Male_Normal.png",
-      "roughness": "models/characters/textures/base/T_Regular_Male_Roughness.png",
-      "fallbackColor": "#b98a63"
-    },
-    "MI_Regular_Female": {
-      "map": "models/characters/textures/base/T_Regular_Female_Dark_BaseColor.png",
-      "normal": "models/characters/textures/base/T_Regular_Female_Normal.png",
-      "roughness": "models/characters/textures/base/T_Regular_Female_Roughness.png",
-      "fallbackColor": "#c69a74"
-    }
+  "animations": {
+    "idle": "Idle",
+    "walk": "Walk",
+    "run": "Run",
+    "talk": "Interact",
+    "interact": "Interact",
+    "wave": "Wave"
   },
   "skin": {
     "materials": [
-      "MI_Regular_Male",
-      "MI_Regular_Female"
+      "Skin",
+      "Skin_Darker"
     ],
     "tones": {
-      "dark": 1,
-      "medium": 1.32,
-      "light": 1.62
+      "dark": 0.78,
+      "medium": 1,
+      "light": 1.24
     }
   },
   "guardianDefault": {
-    "gender": "female",
-    "outfit": "ranger",
-    "variant": 1,
-    "pauldrons": true,
+    "character": "Adventurer",
     "skin": "medium"
   },
   "fit": {

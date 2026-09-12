@@ -48,8 +48,8 @@ const PROCEDURAL_MOTIONS = {
 };
 
 /**
- * Movimiento ESQUELETAL procedural para personajes sin clips (p. ej. el pack
- * `media/Fantasy Character`, cuyos FBX no traen animaciones). Se maneja por
+ * Movimiento ESQUELETAL procedural para personajes sin clips (p. ej. el
+ * ranger de respaldo, cuyo GLB no trae animaciones). Se maneja por
  * nombre de hueso del rig UE (upperarm_l, thigh_l, calf_l, spine_02…) con
  * ejes del mundo convertidos al espacio del padre de cada nodo, así funciona
  * con cualquier esqueleto que use esos nombres y es inofensivo para el resto
@@ -247,16 +247,22 @@ export class AnimatedEntity {
   }
 
   /**
-   * Acopla un Object3D ya montado (p. ej. un personaje modular de
-   * `CharacterSystem`) como si fuera un modelo cargado. El objeto se ajusta
-   * con `fit` si la entidad lo tiene configurado.
+   * Acopla un Object3D ya montado (p. ej. un personaje de `CharacterSystem`)
+   * como si fuera un modelo cargado. El objeto se ajusta con `fit` si la
+   * entidad lo tiene configurado.
    * @param {THREE.Object3D} object
    * @param {string} [source] Etiqueta de diagnóstico del asset.
+   * @param {{ clips?: THREE.AnimationClip[], animations?: object }} [options]
+   *   Clips y mapa de animaciones del asset montado (si trae animaciones).
    */
-  attachModelObject(object, source = 'custom') {
+  attachModelObject(object, source = 'custom', options = {}) {
     if (!object) return { loaded: false, path: null, animated: false };
-    this._attachModel({ scene: object, animations: [] }, this.animations, this.fit, source);
-    return { loaded: true, path: source, animated: false };
+    const clips = Array.isArray(options?.clips) ? options.clips : [];
+    const animations = options?.animations && typeof options.animations === 'object'
+      ? options.animations
+      : this.animations;
+    this._attachModel({ scene: object, animations: clips }, animations, this.fit, source);
+    return { loaded: true, path: source, animated: clips.length > 0 };
   }
 
   _applyMotion(name) {
