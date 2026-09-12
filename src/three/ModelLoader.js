@@ -161,7 +161,7 @@ export const DEFAULT_MODELS = {
   },
   ranger: {
     // Personaje jugable DE RESPALDO: el aspecto principal del guardián lo
-    // monta `CharacterSystem` con el pack `media/Fantasy Character`
+    // monta `CharacterSystem` con el pack `media/glTF`
     // (config/characters.json). Si el pack no está disponible, `paths` se
     // prueba en orden: copia local opcional (`npm run assets:player`) y el
     // ranger procedural del repositorio, siempre presente.

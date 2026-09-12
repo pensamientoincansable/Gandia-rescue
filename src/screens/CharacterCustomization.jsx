@@ -9,27 +9,28 @@ import { AnimatedEntity } from '../three/AnimatedEntity.js';
 /**
  * Modo personalización — edita el aspecto del guardián jugable.
  *
- * El guardián se monta con el pack modular `media/Fantasy Character`
- * (CharacterSystem) y se previsualiza aquí en un escenario Three.js propio:
- * arrastrar para girar, rueda/pellizco para acercar y rotación automática al
- * soltar, con la animación procedural de reposo (respiración y balanceo). El
- * look elegido se guarda en localStorage y es el que usa `RescueVan` al
- * bajar a pie en los modos 3D.
+ * El guardián se monta con el pack `media/glTF` (CharacterSystem): personajes
+ * completos con cabeza, pelo y rasgos reales, y sus propias animaciones. Aquí
+ * se previsualizan en un escenario Three.js propio: arrastrar para girar,
+ * rueda/pellizco para acercar y rotación automática al soltar, con el clip de
+ * reposo real (respiración). El look elegido se guarda en localStorage y es el
+ * que usa `RescueVan` al bajar a pie en los modos 3D.
  */
 
-/** Opciones del personalizador (etiquetas i18n en el render). */
+/** Personajes del pack `media/glTF` (ids del manifiesto config/characters.json). */
 const OPTIONS = {
-  genders: [
-    { id: 'female', icon: '♀', label: 'charBodyFemale' },
-    { id: 'male', icon: '♂', label: 'charBodyMale' },
-  ],
-  outfits: [
-    { id: 'peasant', icon: '🧺', label: 'charOutfitPeasant', swatch: '#8a6a45' },
-    { id: 'ranger', icon: '🏹', label: 'charOutfitRanger', swatch: '#46543f' },
-  ],
-  variants: [
-    { id: 1, label: 'charVariantOne' },
-    { id: 2, label: 'charVariantTwo' },
+  characters: [
+    { id: 'Adventurer', icon: '🧭', label: 'charNameAdventurer' },
+    { id: 'Beach', icon: '🏖️', label: 'charNameBeach' },
+    { id: 'Casual_2', icon: '👕', label: 'charNameCasual' },
+    { id: 'Casual_Hoodie', icon: '🧥', label: 'charNameHoodie' },
+    { id: 'Farmer', icon: '👨‍🌾', label: 'charNameFarmer' },
+    { id: 'King', icon: '👑', label: 'charNameKing' },
+    { id: 'Punk', icon: '🎸', label: 'charNamePunk' },
+    { id: 'Spacesuit', icon: '🧑‍🚀', label: 'charNameSpacesuit' },
+    { id: 'Suit', icon: '🤵', label: 'charNameSuit' },
+    { id: 'Swat', icon: '🛡️', label: 'charNameSwat' },
+    { id: 'Worker', icon: '🦺', label: 'charNameWorker' },
   ],
   skins: [
     { id: 'dark', label: 'charSkinDark', color: '#8a5a3a' },
@@ -37,12 +38,6 @@ const OPTIONS = {
     { id: 'light', label: 'charSkinLight', color: '#d9b08c' },
   ],
 };
-
-/** Tinte aproximado del swatch de cada variante (para pintar los botones). */
-function variantSwatch(outfit, variant) {
-  const base = outfit === 'peasant' ? { one: '#9c7b52', two: '#6f5a7a' } : { one: '#4c5f46', two: '#5b4a3f' };
-  return variant === 2 ? base.two : base.one;
-}
 
 function useCharacterPreview(look) {
   const mountRef = useRef(null);
@@ -138,9 +133,9 @@ function useCharacterPreview(look) {
     ring.position.y = 0.005;
     scene.add(ring);
 
-    // ---- personaje (con respiración/balanceo de reposo) ----
+    // ---- personaje (con su clip de reposo real) ----
     // Una sola entidad reutilizada entre looks: cada rebuild intercambia el
-    // modelo en caliente y recaptura su rig, sin recrear la escena.
+    // modelo en caliente y recaptura su rig/mixer, sin recrear la escena.
     const entity = new AnimatedEntity({ label: 'preview', motion: 'idle', procedural: true });
     scene.add(entity.root);
     state.entity = entity;
@@ -149,8 +144,14 @@ function useCharacterPreview(look) {
       try {
         const result = await assembleCharacter(lookRef.current);
         if (state.disposed || seq !== state.assembling) return;
-        if (result) entity.attachModelObject(result.group, result.source);
-        else entity.detachModel();
+        if (result) {
+          entity.attachModelObject(result.group, result.source, {
+            clips: result.clips,
+            animations: result.animations,
+          });
+        } else {
+          entity.detachModel();
+        }
       } catch {
         if (state.disposed || seq !== state.assembling) return;
         entity.detachModel();
@@ -303,88 +304,23 @@ export default function CharacterCustomization({ t, goMenu, notify }) {
           <section className="char-section">
             <h2><UserRound size={15} />{t('charBody')}</h2>
             <div className="char-options char-options--2">
-              {OPTIONS.genders.map((option) => (
+              {OPTIONS.characters.map((option) => (
                 <button
                   key={option.id}
                   type="button"
-                  className={`char-option ${look.gender === option.id ? 'is-active' : ''}`}
-                  onClick={() => set({ gender: option.id })}
+                  className={`char-option ${look.character === option.id ? 'is-active' : ''}`}
+                  onClick={() => set({ character: option.id })}
                 >
                   <span className="char-option__glyph">{option.icon}</span>
                   <span>{t(option.label)}</span>
-                  {look.gender === option.id && <i><Check size={12} /></i>}
+                  {look.character === option.id && <i><Check size={12} /></i>}
                 </button>
               ))}
             </div>
           </section>
 
           <section className="char-section">
-            <h2><Shirt size={15} />{t('charOutfit')}</h2>
-            <div className="char-options char-options--2">
-              {OPTIONS.outfits.map((option) => (
-                <button
-                  key={option.id}
-                  type="button"
-                  className={`char-option ${look.outfit === option.id ? 'is-active' : ''}`}
-                  onClick={() => set({ outfit: option.id })}
-                >
-                  <span className="char-option__swatch" style={{ background: option.swatch }} />
-                  <span>{t(option.label)}</span>
-                  {look.outfit === option.id && <i><Check size={12} /></i>}
-                </button>
-              ))}
-            </div>
-          </section>
-
-          <section className="char-section">
-            <h2><Sparkles size={15} />{t('charColors')}</h2>
-            <div className="char-options char-options--2">
-              {OPTIONS.variants.map((option) => (
-                <button
-                  key={option.id}
-                  type="button"
-                  className={`char-option ${look.variant === option.id ? 'is-active' : ''}`}
-                  onClick={() => set({ variant: option.id })}
-                >
-                  <span
-                    className="char-option__swatch"
-                    style={{ background: variantSwatch(look.outfit, option.id) }}
-                  />
-                  <span>{t(option.label)}</span>
-                  {look.variant === option.id && <i><Check size={12} /></i>}
-                </button>
-              ))}
-            </div>
-          </section>
-
-          {look.outfit === 'ranger' && (
-            <section className="char-section">
-              <h2><ShieldIcon />{t('charShoulders')}</h2>
-              <div className="char-options char-options--2">
-                <button
-                  type="button"
-                  className={`char-option ${look.pauldrons ? 'is-active' : ''}`}
-                  onClick={() => set({ pauldrons: true })}
-                >
-                  <span className="char-option__glyph">🛡</span>
-                  <span>{t('charShouldersOn')}</span>
-                  {look.pauldrons && <i><Check size={12} /></i>}
-                </button>
-                <button
-                  type="button"
-                  className={`char-option ${!look.pauldrons ? 'is-active' : ''}`}
-                  onClick={() => set({ pauldrons: false })}
-                >
-                  <span className="char-option__glyph">—</span>
-                  <span>{t('charShouldersOff')}</span>
-                  {!look.pauldrons && <i><Check size={12} /></i>}
-                </button>
-              </div>
-            </section>
-          )}
-
-          <section className="char-section">
-            <h2><UserRound size={15} />{t('charSkin')}</h2>
+            <h2><Sparkles size={15} />{t('charSkin')}</h2>
             <div className="char-options char-options--3">
               {OPTIONS.skins.map((option) => (
                 <button
@@ -429,9 +365,4 @@ export default function CharacterCustomization({ t, goMenu, notify }) {
       </footer>
     </main>
   );
-}
-
-/** Hombreras: icono sencillo (escudo de lucide no es necesario). */
-function ShieldIcon() {
-  return <span className="char-section__glyph" aria-hidden="true">🛡</span>;
 }

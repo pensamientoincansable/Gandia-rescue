@@ -1,13 +1,12 @@
 /**
  * Verifica el personaje jugable y su cadena de respaldo sin romper el juego:
- *  1. el guardián se monta desde el pack `media/Fantasy Character`
- *     (CharacterSystem + config/characters.json) y mide 1.85 m con los pies
- *     en el suelo;
+ *  1. el guardián se monta desde el pack `media/glTF` (CharacterSystem +
+ *     config/characters.json) y mide 1.85 m con los pies en el suelo;
  *  2. si el pack no está disponible, `models.json` declara la cadena de
  *     respaldo (copia local opcional → ranger procedural) y el monigote final;
  *  3. `ModelFitter` normaliza cualquier asset a 1.85 m, pies en el suelo y
  *     centrado (los modelos externos vienen en cualquier unidad/orientación);
- *  4. el guardián a pie integra el modelo (altura real, animación procedural).
+ *  4. el guardián a pie integra el modelo (altura real, animaciones reales).
  *
  * Ejecutar: node scripts/player-model-test.mjs
  */
@@ -179,7 +178,7 @@ console.log('· Integración con el guardián a pie');
   const box = new THREE.Box3().setFromObject(van.rangerAvatar.root, true);
   expect(near(box.max.y - box.min.y, 1.85, 0.02), `el personaje mide ${(box.max.y - box.min.y).toFixed(2)} m en el mundo`);
   expect(near(box.min.y, 0, 0.02), 'sus pies coinciden con el punto de apoyo del motor');
-  expect(!result.animated && van.rangerAvatar.procedural, 'modelo sin clips → animación procedural activada');
+  expect(result.animated && van.rangerAvatar.isAnimated, 'el guardián del pack trae animaciones reales');
 
   const spawn = stats.world.spawnPoints.platja;
   van.setPosition(spawn.x, spawn.z, spawn.heading, 'platja');
@@ -188,14 +187,23 @@ console.log('· Integración con el guardián a pie');
   expect(near(van.rangerAvatar.root.position.x, van.rangerPosition.x, 1e-6)
     && near(van.rangerAvatar.root.position.z, van.rangerPosition.z, 1e-6), 'el modelo sigue la posición del guardián');
 
-  const visual = van.rangerAvatar.visual;
+  // Con clips reales el mixer anima el esqueleto (los pies se balancean al
+  // caminar), en lugar del balanceo procedural del monigote.
+  let foot = null;
+  van.rangerAvatar.modelHolder?.traverse((n) => { if (!foot && n.isSkinnedMesh) foot = n.skeleton.getBoneByName('FootL'); });
+  expect(!!foot, 'el esqueleto del guardián expone el pie izquierdo');
+  scene.updateMatrixWorld(true);
+  const restZ = foot.getWorldPosition(new THREE.Vector3()).z;
   van.rangerAvatar.setMotion('walk');
-  for (let frame = 0; frame < 30; frame += 1) van.rangerAvatar.update(1 / 60, frame / 60);
-  expect(visual.position.y !== 0 || visual.rotation.x !== 0, 'camina con balanceo aunque el pack no traiga animaciones');
-  const walkedLean = visual.rotation.x;
+  let swing = 0;
+  for (let frame = 0; frame < 120; frame += 1) {
+    van.rangerAvatar.update(1 / 60, frame / 60);
+    scene.updateMatrixWorld(true);
+    if (frame >= 30) swing = Math.max(swing, Math.abs(foot.getWorldPosition(new THREE.Vector3()).z - restZ));
+  }
+  expect(swing > 0.08, `camina con las animaciones reales del pack (balanceo ${swing.toFixed(2)} m)`);
   van.rangerAvatar.setMotion('idle');
   for (let frame = 0; frame < 90; frame += 1) van.rangerAvatar.update(1 / 60, frame / 60);
-  expect(Math.abs(visual.rotation.x) < Math.abs(walkedLean) + 1e-6, 'en reposo se endereza de nuevo');
 }
 
 console.log('· Respaldo si el pack de personajes no está disponible');
