@@ -86,6 +86,7 @@ export const copy = {
     charNameSuit: 'Traje', charNameSwat: 'Agente SWAT', charNameWorker: 'Obrero/a',
     charSave: 'Guardar guardián', charSaved: 'Guardián guardado', charUnsaved: 'Cambios sin guardar',
     charReset: 'Aspecto por defecto', charBack: 'Volver', charHint: 'Arrastra para girar · rueda para acercar',
+    moreGames3D: 'Más juegos 3D de Juegos π',
   },
   va: {
     rescue: 'Mode rescat', explore: 'Mode exploració', shelter: 'El meu refugi', settings: 'Configuració', profile: 'El meu perfil', species: 'Espècies', credits: 'Informació',
@@ -170,6 +171,7 @@ export const copy = {
     charNameSuit: 'Vestit', charNameSwat: 'Agent SWAT', charNameWorker: 'Obrer/a',
     charSave: 'Guardar guardià', charSaved: 'Guardià guardat', charUnsaved: 'Canvis sense guardar',
     charReset: 'Aspecte per defecte', charBack: 'Tornar', charHint: 'Arrossega per a girar · roda per a apropar',
+    moreGames3D: 'Més jocs 3D de Jocs π',
   },
   en: {
     rescue: 'Rescue mode', explore: 'Explore mode', shelter: 'My shelter', settings: 'Settings', profile: 'My profile', species: 'Species', credits: 'Information',
@@ -254,6 +256,7 @@ export const copy = {
     charNameSuit: 'Suit', charNameSwat: 'SWAT', charNameWorker: 'Worker',
     charSave: 'Save guardian', charSaved: 'Guardian saved', charUnsaved: 'Unsaved changes',
     charReset: 'Default look', charBack: 'Back', charHint: 'Drag to rotate · scroll to zoom',
+    moreGames3D: 'More 3D games by Juegos π',
   },
 };
 

@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import {
-  Bell, BookOpen, Check, ChevronDown, ChevronRight, Compass, Home, Info, Languages, Leaf,
+  Bell, BookOpen, Check, ChevronDown, ChevronRight, Compass, ExternalLink, Gamepad2, Home, Info, Languages, Leaf,
   MapPin, Monitor, Navigation, Palette, Settings, ShieldCheck, Smartphone, Sun, Volume2, VolumeX, Waves, Mountain,
 } from 'lucide-react';
 import { levelForXp, levelProgress, photoCount } from '../lib/game.js';
@@ -130,6 +130,18 @@ export default function MainMenu({ t, language, setLanguage, muted, setMuted, op
           <ModeCard kind="rescue" t={t} onStart={startMode} badge={<span className="alert-dot"><Bell size={12} />{pendingCases} {t('alertsPending')}</span>} />
           <ModeCard kind="explore" t={t} onStart={startMode} />
           <ModeCard kind="shelter" t={t} onStart={startMode} />
+        </div>
+        <div className="more-games-row">
+          <a
+            className="more-games-btn"
+            href="https://pensamientoincansable.github.io/Juegos-3D/"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            <span className="more-games-btn__icon"><Gamepad2 size={18} strokeWidth={2.2} /></span>
+            <span className="more-games-btn__text">{t('moreGames3D')}</span>
+            <span className="more-games-btn__arrow"><ExternalLink size={14} /></span>
+          </a>
         </div>
       </section>
       <div className="menu-footer"><span>© GANDÍA NATURA</span><span>39.0007° N · 0.1660° W</span></div>
